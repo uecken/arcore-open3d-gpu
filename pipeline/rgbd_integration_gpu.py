@@ -721,7 +721,7 @@ class RGBDIntegrationGPU:
             o3d_pose = arcore_to_open3d_pose(pose)
             
             # Tensor APIのTSDFVolumeを使用している場合
-            if hasattr(self.volume, 'integrate') and hasattr(o3d, 't') and hasattr(o3d.t, 'geometry') and isinstance(self.volume, o3d.t.pipelines.slam.TSDFVolume):
+            if self.is_tensor_volume and hasattr(self.volume, 'integrate') and hasattr(o3d, 't') and hasattr(o3d.t, 'geometry'):
                 try:
                     # カラー画像をTensor形式に変換
                     color_array = np.asarray(color)
