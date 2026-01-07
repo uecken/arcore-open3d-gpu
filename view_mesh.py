@@ -5,10 +5,42 @@ Open3Dを使用してPLYメッシュファイルを表示
 """
 
 import sys
+import os
 import argparse
 from pathlib import Path
-import open3d as o3d
-import numpy as np
+
+# 仮想環境のパスを確認
+SCRIPT_DIR = Path(__file__).parent.absolute()
+VENV_PATHS = [
+    SCRIPT_DIR / "venv",
+    SCRIPT_DIR / ".venv",
+    Path("/opt/arcore-open3d/venv"),  # 元のプロジェクトの仮想環境
+]
+
+# 仮想環境が見つかった場合は警告を表示
+venv_found = False
+for venv_path in VENV_PATHS:
+    if venv_path.exists():
+        venv_found = True
+        print(f"⚠ 仮想環境が見つかりました: {venv_path}")
+        print(f"   以下のコマンドで仮想環境を有効化してください:")
+        print(f"   source {venv_path}/bin/activate")
+        print()
+        break
+
+try:
+    import open3d as o3d
+    import numpy as np
+except ImportError as e:
+    if venv_found:
+        print(f"❌ エラー: Open3Dがインストールされていません")
+        print(f"   仮想環境を有効化してから実行してください:")
+        print(f"   source {VENV_PATHS[0]}/bin/activate")
+        print(f"   python view_mesh.py ...")
+    else:
+        print(f"❌ エラー: Open3Dがインストールされていません")
+        print(f"   仮想環境を有効化するか、Open3Dをインストールしてください")
+    sys.exit(1)
 
 
 def get_mesh_info(mesh: o3d.geometry.TriangleMesh) -> dict:
