@@ -87,6 +87,8 @@ depth_estimation:
   enable: true
   model: "DPT_Large"
   device: "cuda"
+  # 深度推定の強制使用（Depthデータがあっても再推定して品質向上）
+  force_use: false  # trueにすると、DepthデータがあってもMiDaSで再推定（GPU使用）
 
 gpu:
   enabled: true

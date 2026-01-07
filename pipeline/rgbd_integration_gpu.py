@@ -328,26 +328,35 @@ class RGBDIntegrationGPU:
             return None
     
     def create_volume(self):
-        """TSDF Volumeを作成（GPU対応）"""
+        """TSDF Volumeを作成（GPU対応、Tensor APIを優先的に使用）"""
         try:
-            # Open3D Tensor APIを使用
-            # 注意: Open3DのTensor APIのTSDF Volumeは実験的な機能のため、
-            # まず従来のScalableTSDFVolumeを使用し、将来的にTensor APIに移行
-            # Tensor APIが完全にサポートされるまで、CPU版を使用
             print(f"ℹ Creating TSDF Volume (device: {self.o3d_device})")
             print(f"  Voxel length: {self.voxel_length}m ({self.voxel_length*1000:.1f}mm)")
-            print("  Note: ScalableTSDFVolume runs on CPU. Tensor API TSDFVolume is experimental.")
             
             # メモリ使用量の警告
             if self.voxel_length < 0.004:
                 print("  ⚠ Warning: Very small voxel_length may cause high memory usage!")
                 print("    Consider using voxel_length >= 0.005 (5mm) for better memory efficiency.")
             
-            # フォールバック: 従来のScalableTSDFVolumeを使用
-            # 将来的にTensor APIが完全サポートされたら、以下を使用:
-            # if hasattr(o3d, 't') and hasattr(o3d.t, 'pipelines'):
-            #     self.volume = o3d.t.pipelines.slam.TSDFVolume(...)
+            # Tensor APIのTSDFVolumeを試みる（GPU対応）
+            if self.use_gpu and hasattr(o3d, 't') and hasattr(o3d.t, 'pipelines') and hasattr(o3d.t.pipelines, 'slam'):
+                try:
+                    # Tensor APIのTSDFVolumeを使用（GPU対応）
+                    print("  Attempting to use Tensor API TSDFVolume (GPU)...")
+                    self.volume = o3d.t.pipelines.slam.TSDFVolume(
+                        voxel_length=self.voxel_length,
+                        sdf_trunc=self.sdf_trunc,
+                        color_type=o3d.core.TensorDtype.UInt8,
+                        device=self.o3d_device
+                    )
+                    print(f"  ✓ Tensor API TSDFVolume created on {self.o3d_device} (GPU)")
+                    return self.volume
+                except Exception as e:
+                    print(f"  ⚠ Tensor API TSDFVolume failed: {e}")
+                    print("  Falling back to ScalableTSDFVolume (CPU)...")
             
+            # フォールバック: 従来のScalableTSDFVolumeを使用（CPU）
+            print("  Note: Using ScalableTSDFVolume (CPU). Tensor API TSDFVolume is experimental.")
             self.volume = o3d.pipelines.integration.ScalableTSDFVolume(
                 voxel_length=self.voxel_length,
                 sdf_trunc=self.sdf_trunc,
@@ -470,7 +479,47 @@ class RGBDIntegrationGPU:
                     print(f"Bilateral filter failed: {e}, using original depth")
                     # エラー時は元の深度画像を使用
             
-            # フィルタリング後の深度画像を使用
+            # Open3D座標系に変換
+            o3d_pose = arcore_to_open3d_pose(pose)
+            
+            # Tensor APIのTSDFVolumeを使用している場合
+            if hasattr(self.volume, 'integrate') and hasattr(o3d, 't') and hasattr(o3d.t, 'geometry') and isinstance(self.volume, o3d.t.pipelines.slam.TSDFVolume):
+                # Tensor APIを使用して統合（GPU上で実行）
+                try:
+                    # カラー画像をTensor形式に変換
+                    color_array = np.asarray(color)
+                    if len(color_array.shape) == 2:
+                        # グレースケールの場合はRGBに変換
+                        color_array = np.stack([color_array, color_array, color_array], axis=-1)
+                    color_tensor = o3d.core.Tensor(color_array, device=self.o3d_device)
+                    color_img = o3d.t.geometry.Image(color_tensor)
+                    
+                    # 深度画像をTensor形式に変換（メートル単位）
+                    depth_array = depth_np_filtered.astype(np.float32) / self.depth_scale
+                    depth_tensor = o3d.core.Tensor(depth_array, device=self.o3d_device)
+                    depth_img = o3d.t.geometry.Image(depth_tensor)
+                    
+                    # RGBD画像を作成（Tensor形式）
+                    rgbd_tensor = o3d.t.geometry.RGBDImage(color_img, depth_img)
+                    
+                    # カメラ内部パラメータをTensor形式に変換
+                    intrinsic_matrix = frame_intrinsic.intrinsic_matrix
+                    intrinsic_tensor = o3d.core.Tensor(intrinsic_matrix, device=self.o3d_device)
+                    
+                    # ポーズをTensor形式に変換（カメラ→ワールドの逆行列）
+                    pose_inv = np.linalg.inv(o3d_pose)
+                    pose_tensor = o3d.core.Tensor(pose_inv, device=self.o3d_device)
+                    
+                    # Volumeに統合（Tensor API、GPU上で実行）
+                    self.volume.integrate(rgbd_tensor, intrinsic_tensor, pose_tensor, self.depth_scale, self.depth_trunc)
+                    return True
+                except Exception as e:
+                    print(f"Tensor API integration failed: {e}, falling back to legacy API")
+                    import traceback
+                    traceback.print_exc()
+                    # フォールバック: 通常のAPIを使用
+            
+            # 通常のAPIを使用（ScalableTSDFVolumeの場合）
             depth_filtered_img = o3d.geometry.Image(depth_np_filtered)
             
             # RGBD画像作成
@@ -480,9 +529,6 @@ class RGBDIntegrationGPU:
                 depth_trunc=self.depth_trunc,
                 convert_rgb_to_intensity=False
             )
-            
-            # Open3D座標系に変換
-            o3d_pose = arcore_to_open3d_pose(pose)
             
             # 統合（Open3Dはカメラ→ワールドの逆行列を期待）
             self.volume.integrate(rgbd, frame_intrinsic, np.linalg.inv(o3d_pose))
@@ -579,18 +625,38 @@ class RGBDIntegrationGPU:
         return success_count > 0
     
     def extract_point_cloud(self) -> Optional[o3d.geometry.PointCloud]:
-        """点群を抽出（GPU対応）"""
+        """点群を抽出（GPU対応、Tensor APIを優先）"""
         if self.volume is None:
             return None
         
         try:
-            # Tensor APIから点群を抽出
+            # Tensor APIのTSDFVolumeの場合
+            if hasattr(self.volume, 'extract_point_cloud') and hasattr(o3d, 't') and hasattr(o3d.t, 'geometry'):
+                try:
+                    # Tensor形式で点群を抽出（GPU上で処理）
+                    pcd_tensor = self.volume.extract_point_cloud()
+                    
+                    # 点群の後処理をGPU上で実行
+                    if self.use_gpu and hasattr(pcd_tensor, 'remove_statistical_outlier'):
+                        pcd_tensor = self._process_point_cloud_tensor(pcd_tensor)
+                    
+                    # Tensor形式の場合は通常のPointCloudに変換
+                    if hasattr(pcd_tensor, 'to_legacy'):
+                        pcd = pcd_tensor.to_legacy()
+                    else:
+                        pcd = pcd_tensor
+                    
+                    # 後処理（CPU版も実行、互換性のため）
+                    pcd = self._process_point_cloud_gpu(pcd)
+                    return pcd
+                except Exception as e:
+                    print(f"Tensor API point cloud extraction failed: {e}, falling back to legacy API")
+                    import traceback
+                    traceback.print_exc()
+            
+            # 通常のAPIを使用（ScalableTSDFVolumeの場合）
             if hasattr(self.volume, 'extract_point_cloud'):
                 pcd = self.volume.extract_point_cloud()
-                
-                # Tensor形式の場合は通常のPointCloudに変換
-                if hasattr(pcd, 'to_legacy'):
-                    pcd = pcd.to_legacy()
                 
                 # 点群の後処理（GPU対応）
                 pcd = self._process_point_cloud_gpu(pcd)
@@ -599,7 +665,37 @@ class RGBDIntegrationGPU:
                 return None
         except Exception as e:
             print(f"Error extracting point cloud: {e}")
+            import traceback
+            traceback.print_exc()
             return None
+    
+    def _process_point_cloud_tensor(self, pcd_tensor: o3d.t.geometry.PointCloud) -> o3d.t.geometry.PointCloud:
+        """点群の後処理（Tensor形式、GPU上で実行）"""
+        pcd_config = self.config.get('pointcloud', {})
+        
+        try:
+            # 統計的外れ値除去（GPU上で実行）
+            if pcd_config.get('remove_outliers', True):
+                nb_neighbors = pcd_config.get('nb_neighbors', 20)
+                std_ratio = pcd_config.get('std_ratio', 2.0)
+                pcd_tensor, _ = pcd_tensor.remove_statistical_outlier(
+                    nb_neighbors=nb_neighbors,
+                    std_ratio=std_ratio
+                )
+            
+            # 半径ベースの外れ値除去（GPU上で実行）
+            if pcd_config.get('radius_outlier_removal', False):
+                radius = pcd_config.get('radius', 0.05)
+                min_neighbors = pcd_config.get('min_neighbors', 10)
+                pcd_tensor, _ = pcd_tensor.remove_radius_outlier(
+                    nb_points=min_neighbors,
+                    search_radius=radius
+                )
+            
+            return pcd_tensor
+        except Exception as e:
+            print(f"GPU tensor point cloud processing failed: {e}")
+            return pcd_tensor
     
     def _process_point_cloud_gpu(self, pcd: o3d.geometry.PointCloud) -> o3d.geometry.PointCloud:
         """点群の後処理（GPU対応を試みる）"""
@@ -611,58 +707,72 @@ class RGBDIntegrationGPU:
                 # Tensor形式の点群に変換
                 pcd_tensor = o3d.t.geometry.PointCloud.from_legacy(pcd, device=self.o3d_device)
                 
-                # 統計的外れ値除去
-                if pcd_config.get('remove_outliers', True) and len(pcd.points) > 0:
-                    nb_neighbors = pcd_config.get('nb_neighbors', 20)
-                    std_ratio = pcd_config.get('std_ratio', 2.0)
-                    pcd_tensor, _ = pcd_tensor.remove_statistical_outlier(
-                        nb_neighbors=nb_neighbors,
-                        std_ratio=std_ratio
-                    )
+                # GPU上で処理
+                pcd_tensor = self._process_point_cloud_tensor(pcd_tensor)
                 
                 # 通常のPointCloudに戻す
                 pcd = pcd_tensor.to_legacy()
+                return pcd
             except Exception as e:
                 print(f"GPU point cloud processing failed: {e}, using CPU")
-                # CPUで処理
-                if pcd_config.get('remove_outliers', True) and len(pcd.points) > 0:
-                    nb_neighbors = pcd_config.get('nb_neighbors', 20)
-                    std_ratio = pcd_config.get('std_ratio', 2.0)
-                    pcd, _ = pcd.remove_statistical_outlier(
-                        nb_neighbors=nb_neighbors,
-                        std_ratio=std_ratio
-                    )
-        else:
-            # CPUで処理
-            if pcd_config.get('remove_outliers', True) and len(pcd.points) > 0:
-                nb_neighbors = pcd_config.get('nb_neighbors', 20)
-                std_ratio = pcd_config.get('std_ratio', 2.0)
-                pcd, _ = pcd.remove_statistical_outlier(
-                    nb_neighbors=nb_neighbors,
-                    std_ratio=std_ratio
-                )
+        
+        # CPUで処理（フォールバック）
+        if pcd_config.get('remove_outliers', True) and len(pcd.points) > 0:
+            nb_neighbors = pcd_config.get('nb_neighbors', 20)
+            std_ratio = pcd_config.get('std_ratio', 2.0)
+            pcd, _ = pcd.remove_statistical_outlier(
+                nb_neighbors=nb_neighbors,
+                std_ratio=std_ratio
+            )
+        
+        if pcd_config.get('radius_outlier_removal', False) and len(pcd.points) > 0:
+            radius = pcd_config.get('radius', 0.05)
+            min_neighbors = pcd_config.get('min_neighbors', 10)
+            pcd, _ = pcd.remove_radius_outlier(
+                nb_points=min_neighbors,
+                radius=radius
+            )
         
         return pcd
     
     def extract_mesh(self) -> Optional[o3d.geometry.TriangleMesh]:
-        """メッシュを抽出（GPU対応）"""
+        """メッシュを抽出（GPU対応、Tensor APIを優先）"""
         if self.volume is None:
             return None
         
         try:
-            # Tensor APIからメッシュを抽出
+            # Tensor APIのTSDFVolumeの場合
+            if hasattr(self.volume, 'extract_triangle_mesh') and hasattr(o3d, 't') and hasattr(o3d.t, 'geometry'):
+                try:
+                    # Tensor形式でメッシュを抽出（GPU上で処理）
+                    mesh_tensor = self.volume.extract_triangle_mesh()
+                    
+                    # Tensor形式の場合は通常のTriangleMeshに変換
+                    if hasattr(mesh_tensor, 'to_legacy'):
+                        mesh = mesh_tensor.to_legacy()
+                    else:
+                        mesh = mesh_tensor
+                    
+                    # GPU上で法線計算を試みる
+                    if self.use_gpu and hasattr(mesh, 'compute_vertex_normals'):
+                        mesh.compute_vertex_normals()
+                    else:
+                        mesh.compute_vertex_normals()
+                    
+                    return mesh
+                except Exception as e:
+                    print(f"Tensor API mesh extraction failed: {e}, falling back to legacy API")
+            
+            # 通常のAPIを使用（ScalableTSDFVolumeの場合）
             if hasattr(self.volume, 'extract_triangle_mesh'):
                 mesh = self.volume.extract_triangle_mesh()
-                
-                # Tensor形式の場合は通常のTriangleMeshに変換
-                if hasattr(mesh, 'to_legacy'):
-                    mesh = mesh.to_legacy()
-                
                 mesh.compute_vertex_normals()
                 return mesh
             else:
                 return None
         except Exception as e:
             print(f"Error extracting mesh: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 

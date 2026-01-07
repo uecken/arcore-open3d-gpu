@@ -410,11 +410,15 @@ async def process_session(job_id: str, session_dir: Path):
         
         print(f"[{job_id}] Frames: {len(parser.frames)}, Has depth: {parser.has_depth_data()}")
         
+        # 深度推定の強制使用オプション（GPU使用のため）
+        force_depth_estimation = DEPTH_ESTIMATION_CONFIG.get('force_use', False)
+        use_depth_estimation = not parser.has_depth_data() or force_depth_estimation
+        
         # ステップ2: 3D再構成
         pcd = None
         mesh = None
         
-        if mode == "rgbd" and parser.has_depth_data():
+        if mode == "rgbd" and (parser.has_depth_data() or use_depth_estimation):
             # RGB-D Integration (GPU対応)
             update_job(job_id, 10, "rgbd_integration", "RGB-D integration (GPU)...")
             
@@ -430,7 +434,8 @@ async def process_session(job_id: str, session_dir: Path):
                 update_job(job_id, overall, "rgbd_integration", m)
             
             try:
-                if integration.process_session(parser, progress_cb):
+                # 深度推定の強制使用（GPU使用のため）
+                if integration.process_session(parser, progress_cb, force_depth_estimation=use_depth_estimation):
                     update_job(job_id, 65, "extracting", "Extracting point cloud and mesh...")
                     # GPU対応版の関数を使用
                     if GPU_AVAILABLE:
