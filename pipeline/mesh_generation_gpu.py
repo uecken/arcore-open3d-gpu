@@ -91,13 +91,15 @@ class MeshGeneratorGPU:
         # GPU対応のメッシュ生成を試みる
         if self.use_gpu and hasattr(o3d, 't') and hasattr(o3d.t, 'geometry'):
             try:
-                # Tensor形式の点群に変換
-                pcd_tensor = o3d.t.geometry.PointCloud.from_legacy(pcd, device=self.o3d_device)
+                # まずCPUで法線を計算（Tensor APIでは法線計算が不安定なため）
+                if not pcd.has_normals():
+                    pcd.estimate_normals(
+                        search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30)
+                    )
+                    pcd.orient_normals_consistent_tangent_plane(30)
                 
-                # 法線がなければ計算（GPU対応）
-                if not pcd_tensor.has_normals():
-                    pcd_tensor.estimate_normals()
-                    pcd_tensor.normalize_normals()
+                # Tensor形式の点群に変換（法線も含む）
+                pcd_tensor = o3d.t.geometry.PointCloud.from_legacy(pcd, device=self.o3d_device)
                 
                 # メッシュ生成
                 if method == 'poisson':
@@ -107,6 +109,8 @@ class MeshGeneratorGPU:
                     return self._generate_cpu(pcd, method)
             except Exception as e:
                 print(f"GPU mesh generation failed: {e}, falling back to CPU")
+                import traceback
+                traceback.print_exc()
                 return self._generate_cpu(pcd, method)
         else:
             # CPUで処理
