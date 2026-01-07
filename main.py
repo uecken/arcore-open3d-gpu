@@ -782,8 +782,20 @@ async def process_session(job_id: str, session_dir: Path):
                 original_triangles = len(mesh.triangles)
                 mesh_to_save = mesh
                 
+                # 簡略化する前に元のメッシュを保存
+                original_mesh_path = result_dir / "mesh_original.ply"
+                save_original = False
+                
                 if simplify_for_viewer and original_triangles > max_triangles:
                     print(f"[{job_id}] ⚠ Mesh too large ({original_triangles} triangles), simplifying to {max_triangles} for viewer...")
+                    # 簡略化前に元のメッシュを保存
+                    try:
+                        o3d.io.write_triangle_mesh(str(original_mesh_path), mesh, write_ascii=False, compressed=False)
+                        save_original = True
+                        print(f"[{job_id}] ✓ Saved original mesh (before simplification): {original_triangles} triangles")
+                    except Exception as e:
+                        print(f"[{job_id}] ⚠ Failed to save original mesh: {e}")
+                    
                     try:
                         # 簡略化（品質を保ちながら）
                         mesh_simplified = mesh.simplify_quadric_decimation(max_triangles)
@@ -821,12 +833,6 @@ async def process_session(job_id: str, session_dir: Path):
                     o3d.io.write_triangle_mesh(str(mesh_path), mesh_to_save)
                     mesh_info = MeshGenerator.get_mesh_info(mesh_to_save)
                     print(f"[{job_id}] ✓ Saved mesh (Binary): {mesh_info['vertices']} vertices, {mesh_info['triangles']} triangles")
-                
-                # 元のメッシュも保存（必要に応じて、バイナリ形式）
-                if mesh_to_save is not mesh:
-                    original_mesh_path = result_dir / "mesh_original.ply"
-                    o3d.io.write_triangle_mesh(str(original_mesh_path), mesh)
-                    print(f"[{job_id}] ✓ Saved original mesh: {original_triangles} triangles")
                     
             except Exception as e:
                 print(f"[{job_id}] ✗ Error saving mesh: {e}")

@@ -56,8 +56,20 @@ def fix_mesh(job_id: str, max_triangles: int = None):
         mesh_output_config = output_config.get('mesh', {})
         simplify_for_viewer = mesh_output_config.get('simplify_for_viewer', True)  # デフォルト: true
     
+    # 簡略化する前に元のメッシュを保存
+    original_mesh_path = results_dir / job_id / "mesh_original.ply"
+    save_original = False
+    
     if simplify_for_viewer and original_triangles > max_triangles:
         print(f"Simplifying mesh to {max_triangles} triangles...")
+        # 簡略化前に元のメッシュを保存
+        try:
+            o3d.io.write_triangle_mesh(str(original_mesh_path), mesh, write_ascii=False, compressed=False)
+            save_original = True
+            print(f"✓ Saved original mesh (before simplification): {original_triangles} triangles")
+        except Exception as e:
+            print(f"⚠ Failed to save original mesh: {e}")
+        
         simplified = mesh.simplify_quadric_decimation(max_triangles)
         
         if len(simplified.triangles) == 0:
