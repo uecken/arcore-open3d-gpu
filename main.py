@@ -571,7 +571,34 @@ async def process_session(job_id: str, session_dir: Path):
                     else:
                         mesh.paint_uniform_color([0.7, 0.7, 0.7])
                 
-                # メッシュが大きすぎる場合は簡略化（ビューアー用）
+                # メッシュの品質向上処理
+                print(f"[{job_id}] Improving mesh quality...")
+                
+                # 1. メッシュのクリーンアップ
+                mesh.remove_duplicated_triangles()
+                mesh.remove_duplicated_vertices()
+                mesh.remove_non_manifold_edges()
+                mesh.remove_degenerate_triangles()
+                mesh.remove_unreferenced_vertices()
+                
+                # 2. メッシュの平滑化（簡略化前に行う）
+                mesh_config = CONFIG.get('mesh', {})
+                smoothing_config = mesh_config.get('smoothing', {})
+                if smoothing_config.get('enable', True):
+                    iterations = smoothing_config.get('iterations', 5)
+                    lambda_filter = smoothing_config.get('lambda_filter', 0.5)
+                    print(f"[{job_id}] Smoothing mesh ({iterations} iterations)...")
+                    try:
+                        mesh = mesh.filter_smooth_laplacian(
+                            number_of_iterations=iterations,
+                            lambda_filter=lambda_filter
+                        )
+                        mesh.compute_vertex_normals()
+                        print(f"[{job_id}] ✓ Mesh smoothed")
+                    except Exception as e:
+                        print(f"[{job_id}] ⚠ Smoothing error: {e}")
+                
+                # 3. メッシュが大きすぎる場合は簡略化（ビューアー用）
                 output_config = CONFIG.get('output', {})
                 max_triangles = output_config.get('mesh', {}).get('max_triangles_for_viewer', 1000000)  # 100万三角形まで
                 
@@ -581,9 +608,15 @@ async def process_session(job_id: str, session_dir: Path):
                 if original_triangles > max_triangles:
                     print(f"[{job_id}] ⚠ Mesh too large ({original_triangles} triangles), simplifying to {max_triangles} for viewer...")
                     try:
-                        # 簡略化
+                        # 簡略化（品質を保ちながら）
                         mesh_simplified = mesh.simplify_quadric_decimation(max_triangles)
                         if len(mesh_simplified.triangles) > 0:
+                            # 簡略化後もクリーンアップ
+                            mesh_simplified.remove_duplicated_triangles()
+                            mesh_simplified.remove_duplicated_vertices()
+                            mesh_simplified.remove_non_manifold_edges()
+                            mesh_simplified.compute_vertex_normals()
+                            
                             mesh_to_save = mesh_simplified
                             print(f"[{job_id}] ✓ Simplified mesh: {len(mesh_simplified.triangles)} triangles ({original_triangles} -> {len(mesh_simplified.triangles)})")
                         else:
