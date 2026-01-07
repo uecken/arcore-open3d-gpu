@@ -293,8 +293,20 @@ def regenerate_mesh_from_pointcloud(job_id: str, config: Dict[str, Any] = None):
     original_triangles = len(mesh.triangles)
     mesh_to_save = mesh
     
+    # 簡略化する前に元のメッシュを保存
+    original_mesh_path = results_dir / job_id / "mesh_original.ply"
+    save_original = False
+    
     if simplify_for_viewer and original_triangles > max_triangles:
         print(f"Simplifying mesh to {max_triangles} triangles...")
+        # 簡略化前に元のメッシュを保存
+        try:
+            o3d.io.write_triangle_mesh(str(original_mesh_path), mesh, write_ascii=False, compressed=False)
+            save_original = True
+            print(f"✓ Saved original mesh (before simplification): {original_triangles} triangles")
+        except Exception as e:
+            print(f"⚠ Failed to save original mesh: {e}")
+        
         try:
             mesh_simplified = mesh.simplify_quadric_decimation(max_triangles)
             if len(mesh_simplified.triangles) > 0:
