@@ -171,14 +171,16 @@ def regenerate_mesh_from_pointcloud(job_id: str, config: Dict[str, Any] = None):
     # 品質向上処理（yaml設定を適用）
     mesh = improve_mesh_quality(mesh, config, job_id)
     
-    # 簡略化（必要に応じて）
+    # 簡略化（必要に応じて、設定でON/OFF可能）
     output_config = config.get('output', {})
-    max_triangles = output_config.get('mesh', {}).get('max_triangles_for_viewer', 1000000)
+    mesh_output_config = output_config.get('mesh', {})
+    simplify_for_viewer = mesh_output_config.get('simplify_for_viewer', True)  # デフォルト: true
+    max_triangles = mesh_output_config.get('max_triangles_for_viewer', 1000000)
     
     original_triangles = len(mesh.triangles)
     mesh_to_save = mesh
     
-    if original_triangles > max_triangles:
+    if simplify_for_viewer and original_triangles > max_triangles:
         print(f"Simplifying mesh to {max_triangles} triangles...")
         try:
             mesh_simplified = mesh.simplify_quadric_decimation(max_triangles)
@@ -193,6 +195,8 @@ def regenerate_mesh_from_pointcloud(job_id: str, config: Dict[str, Any] = None):
                 print("⚠ Simplification failed, using original mesh")
         except Exception as e:
             print(f"⚠ Simplification error: {e}, using original mesh")
+    elif not simplify_for_viewer:
+        print(f"⚠ Viewer simplification is disabled (simplify_for_viewer=false), using original mesh ({original_triangles} triangles)")
     
     # ASCII形式で保存
     print(f"Saving mesh to: {mesh_path}")
