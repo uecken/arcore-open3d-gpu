@@ -743,33 +743,38 @@ class RGBDIntegrationGPU:
                 if tensor_available:
                     try:
                         # カラー画像をTensor形式に変換
-                    color_array = np.asarray(color)
-                    if len(color_array.shape) == 2:
-                        color_array = np.stack([color_array, color_array, color_array], axis=-1)
-                    color_tensor = o3d.core.Tensor(color_array, device=self.o3d_device)
-                    color_img = o3d.t.geometry.Image(color_tensor)
-                    
-                    # 深度画像をTensor形式に変換（メートル単位）
-                    depth_array = depth_np.astype(np.float32) / self.depth_scale
-                    depth_tensor = o3d.core.Tensor(depth_array, device=self.o3d_device)
-                    depth_img = o3d.t.geometry.Image(depth_tensor)
-                    
-                    # RGBD画像を作成（Tensor形式）
-                    rgbd_tensor = o3d.t.geometry.RGBDImage(color_img, depth_img)
-                    
-                    # カメラ内部パラメータをTensor形式に変換
-                    intrinsic_matrix = frame_intrinsic.intrinsic_matrix
-                    intrinsic_tensor = o3d.core.Tensor(intrinsic_matrix, device=self.o3d_device)
-                    
-                    # ポーズをTensor形式に変換
-                    pose_inv = np.linalg.inv(o3d_pose)
-                    pose_tensor = o3d.core.Tensor(pose_inv, device=self.o3d_device)
-                    
-                    # Volumeに統合（Tensor API、GPU上で実行）
-                    self.volume.integrate(rgbd_tensor, intrinsic_tensor, pose_tensor, self.depth_scale, self.depth_trunc)
-                    return True
-                except Exception as e:
-                    print(f"Tensor API integration failed: {e}, falling back to legacy API")
+                        color_array = np.asarray(color)
+                        if len(color_array.shape) == 2:
+                            color_array = np.stack([color_array, color_array, color_array], axis=-1)
+                        color_tensor = o3d.core.Tensor(color_array, device=self.o3d_device)
+                        color_img = o3d.t.geometry.Image(color_tensor)
+                        
+                        # 深度画像をTensor形式に変換（メートル単位）
+                        depth_array = depth_np.astype(np.float32) / self.depth_scale
+                        depth_tensor = o3d.core.Tensor(depth_array, device=self.o3d_device)
+                        depth_img = o3d.t.geometry.Image(depth_tensor)
+                        
+                        # RGBD画像を作成（Tensor形式）
+                        rgbd_tensor = o3d.t.geometry.RGBDImage(color_img, depth_img)
+                        
+                        # カメラ内部パラメータをTensor形式に変換
+                        intrinsic_matrix = frame_intrinsic.intrinsic_matrix
+                        intrinsic_tensor = o3d.core.Tensor(intrinsic_matrix, device=self.o3d_device)
+                        
+                        # ポーズをTensor形式に変換
+                        pose_inv = np.linalg.inv(o3d_pose)
+                        pose_tensor = o3d.core.Tensor(pose_inv, device=self.o3d_device)
+                        
+                        # Volumeに統合（Tensor API、GPU上で実行）
+                        self.volume.integrate(rgbd_tensor, intrinsic_tensor, pose_tensor, self.depth_scale, self.depth_trunc)
+                        return True
+                    except Exception as e:
+                        print(f"Tensor API integration failed: {e}, falling back to legacy API")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    # Tensor APIが利用できない場合は通常のAPIを使用
+                    pass
             
             # 通常のAPIを使用
             rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
