@@ -581,18 +581,34 @@ async def process_session(job_id: str, session_dir: Path):
                 mesh.remove_degenerate_triangles()
                 mesh.remove_unreferenced_vertices()
                 
-                # 2. メッシュの平滑化（簡略化前に行う）
+                # 2. メッシュの平滑化（簡略化前に行う、yaml設定を適用）
                 mesh_config = CONFIG.get('mesh', {})
                 smoothing_config = mesh_config.get('smoothing', {})
                 if smoothing_config.get('enable', True):
                     iterations = smoothing_config.get('iterations', 5)
                     lambda_filter = smoothing_config.get('lambda_filter', 0.5)
-                    print(f"[{job_id}] Smoothing mesh ({iterations} iterations)...")
+                    method = smoothing_config.get('method', 'laplacian')
+                    
+                    print(f"[{job_id}] Smoothing mesh ({method}, {iterations} iterations, lambda={lambda_filter})...")
                     try:
-                        mesh = mesh.filter_smooth_laplacian(
-                            number_of_iterations=iterations,
-                            lambda_filter=lambda_filter
-                        )
+                        if method == 'laplacian':
+                            mesh = mesh.filter_smooth_laplacian(
+                                number_of_iterations=iterations,
+                                lambda_filter=lambda_filter
+                            )
+                        elif method == 'taubin':
+                            # Taubin平滑化（Open3D 0.19以降で利用可能）
+                            mesh = mesh.filter_smooth_taubin(
+                                number_of_iterations=iterations,
+                                lambda_filter=lambda_filter,
+                                mu=-0.53  # Taubinパラメータ（推奨値）
+                            )
+                        else:
+                            print(f"[{job_id}] ⚠ Unknown smoothing method: {method}, using laplacian")
+                            mesh = mesh.filter_smooth_laplacian(
+                                number_of_iterations=iterations,
+                                lambda_filter=lambda_filter
+                            )
                         mesh.compute_vertex_normals()
                         print(f"[{job_id}] ✓ Mesh smoothed")
                     except Exception as e:

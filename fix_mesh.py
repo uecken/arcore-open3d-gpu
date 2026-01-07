@@ -2,14 +2,28 @@
 """
 既存のメッシュファイルを簡略化し、ASCII形式で再保存するスクリプト
 Three.jsのPLYLoaderと互換性がある形式で保存します
+（regenerate_mesh.pyを使用することを推奨）
 """
 
 import sys
+import yaml
 import open3d as o3d
 from pathlib import Path
+from typing import Dict, Any
 
-def fix_mesh(job_id: str, max_triangles: int = 500000):
-    """メッシュを簡略化してASCII形式で保存"""
+# 設定読み込み
+CONFIG_PATH = Path(__file__).parent / "config.yaml"
+
+def load_config() -> Dict[str, Any]:
+    if CONFIG_PATH.exists():
+        with open(CONFIG_PATH, 'r') as f:
+            return yaml.safe_load(f)
+    return {}
+
+def fix_mesh(job_id: str, max_triangles: int = None):
+    """メッシュを簡略化してASCII形式で保存（yaml設定を適用）"""
+    config = load_config()
+    
     results_dir = Path("/opt/arcore-open3d-gpu/data/results")
     mesh_path = results_dir / job_id / "mesh.ply"
     
@@ -27,7 +41,15 @@ def fix_mesh(job_id: str, max_triangles: int = 500000):
         print("Error: Mesh has no triangles!")
         return False
     
+    # 品質向上処理（yaml設定を適用）
+    from regenerate_mesh import improve_mesh_quality
+    mesh = improve_mesh_quality(mesh, config, job_id)
+    
     # 簡略化
+    if max_triangles is None:
+        output_config = config.get('output', {})
+        max_triangles = output_config.get('mesh', {}).get('max_triangles_for_viewer', 1000000)
+    
     if original_triangles > max_triangles:
         print(f"Simplifying mesh to {max_triangles} triangles...")
         simplified = mesh.simplify_quadric_decimation(max_triangles)
@@ -35,6 +57,12 @@ def fix_mesh(job_id: str, max_triangles: int = 500000):
         if len(simplified.triangles) == 0:
             print("Error: Simplification failed, mesh has no triangles after simplification!")
             return False
+        
+        # 簡略化後もクリーンアップ
+        simplified.remove_duplicated_triangles()
+        simplified.remove_duplicated_vertices()
+        simplified.remove_non_manifold_edges()
+        simplified.compute_vertex_normals()
         
         print(f"Simplified mesh: {len(simplified.vertices)} vertices, {len(simplified.triangles)} triangles")
         mesh_to_save = simplified
@@ -64,10 +92,11 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python fix_mesh.py <job_id> [max_triangles]")
         print("Example: python fix_mesh.py 1611626e 500000")
+        print("Note: Use regenerate_mesh.py for full regeneration with yaml settings")
         sys.exit(1)
     
     job_id = sys.argv[1]
-    max_triangles = int(sys.argv[2]) if len(sys.argv) > 2 else 500000
+    max_triangles = int(sys.argv[2]) if len(sys.argv) > 2 else None
     
     success = fix_mesh(job_id, max_triangles)
     sys.exit(0 if success else 1)
