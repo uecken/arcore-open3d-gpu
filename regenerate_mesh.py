@@ -86,6 +86,70 @@ def improve_mesh_quality(mesh: o3d.geometry.TriangleMesh, config: Dict[str, Any]
         except Exception as e:
             print(f"{'[' + job_id + '] ' if job_id else ''}⚠ Smoothing error: {e}")
     
+    # 3. メッシュ品質向上処理（細分化、法線改善、色補正）
+    quality_config = mesh_config.get('quality_improvement', {})
+    if quality_config.get('enable', True):
+        # 3-1. メッシュ細分化（Subdivision）
+        subdivision_config = quality_config.get('subdivision', {})
+        if subdivision_config.get('enable', True):
+            subdiv_method = subdivision_config.get('method', 'loop')
+            subdiv_iterations = subdivision_config.get('iterations', 1)
+            
+            if subdiv_iterations > 0:
+                print(f"{'[' + job_id + '] ' if job_id else ''}Subdividing mesh ({subdiv_method}, {subdiv_iterations} iterations)...")
+                try:
+                    if subdiv_method == 'loop':
+                        mesh = mesh.subdivide_loop(number_of_iterations=subdiv_iterations)
+                    elif subdiv_method == 'midpoint':
+                        mesh = mesh.subdivide_midpoint(number_of_iterations=subdiv_iterations)
+                    else:
+                        print(f"{'[' + job_id + '] ' if job_id else ''}⚠ Unknown subdivision method: {subdiv_method}, using loop")
+                        mesh = mesh.subdivide_loop(number_of_iterations=subdiv_iterations)
+                    print(f"{'[' + job_id + '] ' if job_id else ''}✓ Mesh subdivided: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
+                except Exception as e:
+                    print(f"{'[' + job_id + '] ' if job_id else ''}⚠ Subdivision error: {e}")
+        
+        # 3-2. 法線の改善
+        normal_config = quality_config.get('normal_improvement', {})
+        if normal_config.get('enable', True):
+            print(f"{'[' + job_id + '] ' if job_id else ''}Improving normals...")
+            try:
+                mesh.compute_vertex_normals(normalized=True)
+                if normal_config.get('smooth_normals', True):
+                    mesh.normalize_normals()
+                print(f"{'[' + job_id + '] ' if job_id else ''}✓ Normals improved")
+            except Exception as e:
+                print(f"{'[' + job_id + '] ' if job_id else ''}⚠ Normal improvement error: {e}")
+        
+        # 3-3. 色の補正と強化
+        color_config = quality_config.get('color_enhancement', {})
+        if color_config.get('enable', True) and mesh.has_vertex_colors():
+            print(f"{'[' + job_id + '] ' if job_id else ''}Enhancing colors...")
+            try:
+                colors = np.asarray(mesh.vertex_colors)
+                contrast = color_config.get('contrast', 1.0)
+                saturation = color_config.get('saturation', 1.0)
+                brightness = color_config.get('brightness', 1.0)
+                
+                # コントラスト調整
+                if contrast != 1.0:
+                    colors = (colors - 0.5) * contrast + 0.5
+                
+                # 彩度調整
+                if saturation != 1.0:
+                    gray = np.mean(colors, axis=1, keepdims=True)
+                    colors = gray + (colors - gray) * saturation
+                
+                # 明度調整
+                if brightness != 1.0:
+                    colors = colors * brightness
+                
+                colors = np.clip(colors, 0, 1)
+                mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
+                print(f"{'[' + job_id + '] ' if job_id else ''}✓ Colors enhanced (contrast={contrast}, saturation={saturation}, brightness={brightness})")
+            except Exception as e:
+                print(f"{'[' + job_id + '] ' if job_id else ''}⚠ Color enhancement error: {e}")
+    
     return mesh
 
 def regenerate_mesh_from_pointcloud(job_id: str, config: Dict[str, Any] = None):
