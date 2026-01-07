@@ -614,14 +614,16 @@ async def process_session(job_id: str, session_dir: Path):
                     except Exception as e:
                         print(f"[{job_id}] ⚠ Smoothing error: {e}")
                 
-                # 3. メッシュが大きすぎる場合は簡略化（ビューアー用）
+                # 3. メッシュが大きすぎる場合は簡略化（ビューアー用、設定でON/OFF可能）
                 output_config = CONFIG.get('output', {})
-                max_triangles = output_config.get('mesh', {}).get('max_triangles_for_viewer', 1000000)  # 100万三角形まで
+                mesh_output_config = output_config.get('mesh', {})
+                simplify_for_viewer = mesh_output_config.get('simplify_for_viewer', True)  # デフォルト: true
+                max_triangles = mesh_output_config.get('max_triangles_for_viewer', 1000000)  # 100万三角形まで
                 
                 original_triangles = len(mesh.triangles)
                 mesh_to_save = mesh
                 
-                if original_triangles > max_triangles:
+                if simplify_for_viewer and original_triangles > max_triangles:
                     print(f"[{job_id}] ⚠ Mesh too large ({original_triangles} triangles), simplifying to {max_triangles} for viewer...")
                     try:
                         # 簡略化（品質を保ちながら）

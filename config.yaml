@@ -90,7 +90,9 @@ output:
     compute_normals: true
     simplify: false
     target_triangles: 100000
-    max_triangles_for_viewer: 500000  # ビューアー表示用の最大三角形数（50万）
+    # ビューアー表示用の簡略化設定
+    simplify_for_viewer: true  # web表示用の簡略化を有効にするか（true/false）
+    max_triangles_for_viewer: 500000  # ビューアー表示用の最大三角形数（50万、simplify_for_viewer=trueの場合のみ適用）
 
 logging:
   level: "INFO"

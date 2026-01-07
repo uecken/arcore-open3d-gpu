@@ -45,12 +45,18 @@ def fix_mesh(job_id: str, max_triangles: int = None):
     from regenerate_mesh import improve_mesh_quality
     mesh = improve_mesh_quality(mesh, config, job_id)
     
-    # 簡略化
+    # 簡略化（設定でON/OFF可能）
     if max_triangles is None:
         output_config = config.get('output', {})
-        max_triangles = output_config.get('mesh', {}).get('max_triangles_for_viewer', 1000000)
+        mesh_output_config = output_config.get('mesh', {})
+        simplify_for_viewer = mesh_output_config.get('simplify_for_viewer', True)  # デフォルト: true
+        max_triangles = mesh_output_config.get('max_triangles_for_viewer', 1000000)
+    else:
+        output_config = config.get('output', {})
+        mesh_output_config = output_config.get('mesh', {})
+        simplify_for_viewer = mesh_output_config.get('simplify_for_viewer', True)  # デフォルト: true
     
-    if original_triangles > max_triangles:
+    if simplify_for_viewer and original_triangles > max_triangles:
         print(f"Simplifying mesh to {max_triangles} triangles...")
         simplified = mesh.simplify_quadric_decimation(max_triangles)
         
