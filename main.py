@@ -641,6 +641,8 @@ async def process_session(job_id: str, session_dir: Path):
                             print(f"[{job_id}] ⚠ Simplification failed, using original mesh")
                     except Exception as e:
                         print(f"[{job_id}] ⚠ Simplification error: {e}, using original mesh")
+                elif not simplify_for_viewer:
+                    print(f"[{job_id}] ℹ Viewer simplification is disabled (simplify_for_viewer=false), using original mesh ({original_triangles} triangles)")
                 
                 # メッシュを保存（ASCII形式で保存、Three.jsのPLYLoaderと互換性がある）
                 # 注意: 大きなメッシュの場合はASCII形式でもファイルサイズが大きくなる
