@@ -574,13 +574,15 @@ class RGBDIntegrationGPU:
     
     def process_session(self, 
                         parser: ARCoreDataParser,
-                        progress_callback: Callable[[int, str], None] = None) -> bool:
+                        progress_callback: Callable[[int, str], None] = None,
+                        force_depth_estimation: bool = False) -> bool:
         """
-        セッション全体を処理
+        セッション全体を処理（GPU対応、深度推定の強制使用オプション付き）
         
         Args:
             parser: ARCoreデータパーサー
             progress_callback: 進捗コールバック (progress: int, message: str)
+            force_depth_estimation: 深度推定を強制的に使用するか（GPU使用のため）
             
         Returns:
             成功したかどうか
@@ -592,11 +594,31 @@ class RGBDIntegrationGPU:
         self.set_intrinsics(parser.intrinsics)
         self.create_volume()
         
-        # Depthがあるフレームを取得
-        frames = parser.get_frames_with_depth()
+        # 深度推定の強制使用（GPU使用のため）
+        depth_estimator = None
+        if force_depth_estimation or not parser.has_depth_data():
+            try:
+                from pipeline.depth_estimation import MiDaSDepthEstimator
+                depth_config = self.config.get('depth_estimation', {})
+                depth_estimator = MiDaSDepthEstimator(
+                    model_name=depth_config.get('model', 'DPT_Large'),
+                    device=depth_config.get('device', 'cuda'),
+                    gpu_config=self.gpu_config
+                )
+                print(f"✓ Depth estimator initialized (GPU: {depth_estimator.device})")
+            except Exception as e:
+                print(f"⚠ Failed to initialize depth estimator: {e}")
+                if force_depth_estimation:
+                    print("  Continuing without depth estimation...")
+        
+        # Depthがあるフレームを取得（深度推定を使用する場合は全フレーム）
+        if depth_estimator is not None:
+            frames = parser.get_frames_with_pose()
+        else:
+            frames = parser.get_frames_with_depth()
         
         if not frames:
-            print("No frames with depth data")
+            print("No frames available")
             return False
         
         total = len(frames)
@@ -608,21 +630,137 @@ class RGBDIntegrationGPU:
             
             pose_matrix = frame.pose.to_matrix()
             
-            success = self.integrate_frame(
-                frame.image_path,
-                frame.depth_path,
-                pose_matrix
-            )
+            # 深度推定を使用する場合
+            if depth_estimator is not None:
+                try:
+                    # カラー画像から深度を推定（GPU）
+                    color_img = cv2.imread(str(frame.image_path))
+                    if color_img is not None:
+                        depth_map = depth_estimator.estimate_depth_metric(
+                            color_img,
+                            scale=self.depth_scale,
+                            shift=0.0
+                        )
+                        # 深度マップをuint16形式に変換
+                        depth_map_uint16 = (depth_map * self.depth_scale).astype(np.uint16)
+                        depth_img = o3d.geometry.Image(depth_map_uint16)
+                        color = o3d.io.read_image(str(frame.image_path))
+                        success = self.integrate_frame_with_images(color, depth_img, pose_matrix)
+                    else:
+                        continue
+                except Exception as e:
+                    print(f"Depth estimation failed for {frame.image_path}: {e}")
+                    continue
+            else:
+                # 通常の深度画像を使用
+                if frame.depth_path is None or not frame.depth_path.exists():
+                    continue
+                success = self.integrate_frame(
+                    frame.image_path,
+                    frame.depth_path,
+                    pose_matrix
+                )
             
             if success:
                 success_count += 1
             
             if progress_callback:
                 progress = int((i + 1) / total * 100)
-                progress_callback(progress, f"Integrated {i + 1}/{total} frames (GPU: {self.use_gpu})")
+                gpu_status = "GPU" if self.use_gpu else "CPU"
+                depth_status = "estimated" if depth_estimator is not None else "original"
+                progress_callback(progress, f"Integrated {i + 1}/{total} frames ({gpu_status}, depth: {depth_status})")
         
         print(f"Integrated {success_count}/{total} frames")
         return success_count > 0
+    
+    def integrate_frame_with_images(self,
+                                    color: o3d.geometry.Image,
+                                    depth: o3d.geometry.Image,
+                                    pose: np.ndarray) -> bool:
+        """
+        画像オブジェクトから直接統合（深度推定用、GPU対応）
+        
+        Args:
+            color: カラー画像
+            depth: 深度画像
+            pose: 4x4カメラポーズ行列
+            
+        Returns:
+            成功したかどうか
+        """
+        if self.volume is None:
+            self.create_volume()
+        
+        if self.intrinsic is None:
+            raise ValueError("Camera intrinsics not set")
+        
+        try:
+            color_np = np.asarray(color)
+            depth_np = np.asarray(depth)
+            img_h, img_w = color_np.shape[:2]
+            
+            # サイズ確認・リサイズ
+            if color_np.shape[:2] != depth_np.shape[:2]:
+                target_h, target_w = color_np.shape[:2]
+                depth_resized = cv2.resize(depth_np, (target_w, target_h), 
+                                           interpolation=cv2.INTER_NEAREST)
+                depth = o3d.geometry.Image(depth_resized)
+                depth_np = depth_resized
+            
+            # 画像サイズに基づいてintrinsicを調整
+            frame_intrinsic = self._adjust_intrinsic(img_w, img_h)
+            
+            # Open3D座標系に変換
+            o3d_pose = arcore_to_open3d_pose(pose)
+            
+            # Tensor APIのTSDFVolumeを使用している場合
+            if hasattr(self.volume, 'integrate') and hasattr(o3d, 't') and hasattr(o3d.t, 'geometry') and isinstance(self.volume, o3d.t.pipelines.slam.TSDFVolume):
+                try:
+                    # カラー画像をTensor形式に変換
+                    color_array = np.asarray(color)
+                    if len(color_array.shape) == 2:
+                        color_array = np.stack([color_array, color_array, color_array], axis=-1)
+                    color_tensor = o3d.core.Tensor(color_array, device=self.o3d_device)
+                    color_img = o3d.t.geometry.Image(color_tensor)
+                    
+                    # 深度画像をTensor形式に変換（メートル単位）
+                    depth_array = depth_np.astype(np.float32) / self.depth_scale
+                    depth_tensor = o3d.core.Tensor(depth_array, device=self.o3d_device)
+                    depth_img = o3d.t.geometry.Image(depth_tensor)
+                    
+                    # RGBD画像を作成（Tensor形式）
+                    rgbd_tensor = o3d.t.geometry.RGBDImage(color_img, depth_img)
+                    
+                    # カメラ内部パラメータをTensor形式に変換
+                    intrinsic_matrix = frame_intrinsic.intrinsic_matrix
+                    intrinsic_tensor = o3d.core.Tensor(intrinsic_matrix, device=self.o3d_device)
+                    
+                    # ポーズをTensor形式に変換
+                    pose_inv = np.linalg.inv(o3d_pose)
+                    pose_tensor = o3d.core.Tensor(pose_inv, device=self.o3d_device)
+                    
+                    # Volumeに統合（Tensor API、GPU上で実行）
+                    self.volume.integrate(rgbd_tensor, intrinsic_tensor, pose_tensor, self.depth_scale, self.depth_trunc)
+                    return True
+                except Exception as e:
+                    print(f"Tensor API integration failed: {e}, falling back to legacy API")
+            
+            # 通常のAPIを使用
+            rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
+                color, depth,
+                depth_scale=self.depth_scale,
+                depth_trunc=self.depth_trunc,
+                convert_rgb_to_intensity=False
+            )
+            
+            self.volume.integrate(rgbd, frame_intrinsic, np.linalg.inv(o3d_pose))
+            return True
+            
+        except Exception as e:
+            print(f"Frame integration error: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def extract_point_cloud(self) -> Optional[o3d.geometry.PointCloud]:
         """点群を抽出（GPU対応、Tensor APIを優先）"""
