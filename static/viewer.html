@@ -489,12 +489,25 @@
         // Loading UI
         // ============================================================
         function showLoading(text = 'Loading...') {
-            document.getElementById('loading-text').textContent = text;
-            document.getElementById('loading-overlay').classList.remove('hidden');
+            const overlay = document.getElementById('loading-overlay');
+            const textEl = document.getElementById('loading-text');
+            textEl.textContent = text;
+            overlay.classList.remove('hidden', 'error');
         }
         
         function hideLoading() {
             document.getElementById('loading-overlay').classList.add('hidden');
+        }
+        
+        function showError(message, details = '') {
+            const overlay = document.getElementById('loading-overlay');
+            const textEl = document.getElementById('loading-text');
+            textEl.textContent = message;
+            overlay.classList.remove('hidden');
+            overlay.classList.add('error');
+            if (details) {
+                console.error('Error details:', details);
+            }
         }
         
         // ============================================================
@@ -823,12 +836,36 @@
         }
         
         async function loadMesh(jobId) {
-            return new Promise((resolve, reject) => {
+            return new Promise(async (resolve, reject) => {
                 try {
-                    const loader = new THREE.PLYLoader();
                     const url = `${API_BASE}/scenes/${jobId}/mesh.ply`;
-                    
                     console.log('Loading mesh from:', url);
+                    
+                    // まずファイルサイズをチェック
+                    try {
+                        const headResponse = await fetch(url, { method: 'HEAD' });
+                        const contentLength = headResponse.headers.get('content-length');
+                        if (contentLength) {
+                            const fileSizeMB = parseInt(contentLength) / (1024 * 1024);
+                            const MAX_FILE_SIZE_MB = 500; // 500MBまで
+                            
+                            if (fileSizeMB > MAX_FILE_SIZE_MB) {
+                                const errorMsg = `メッシュファイルが大きすぎます (${fileSizeMB.toFixed(1)}MB)。ブラウザで読み込めません。\n\n解決方法:\n1. config.yamlで simplify_for_viewer: true に設定\n2. python regenerate_mesh.py ${jobId} existing を実行`;
+                                showError(errorMsg);
+                                reject(new Error(`Mesh file too large: ${fileSizeMB.toFixed(1)}MB`));
+                                return;
+                            }
+                            
+                            if (fileSizeMB > 100) {
+                                console.warn(`Large mesh file detected: ${fileSizeMB.toFixed(1)}MB. This may cause performance issues.`);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Could not check file size:', e);
+                        // ファイルサイズチェックに失敗しても続行
+                    }
+                    
+                    const loader = new THREE.PLYLoader();
                     
                     loader.load(url,
                         (geometry) => {
@@ -848,15 +885,24 @@
                                 console.log(`Mesh loaded: ${triangleCount.toLocaleString()} triangles`);
                                 
                                 if (triangleCount === 0) {
-                                    console.error('ERROR: Mesh has no triangles!');
+                                    const errorMsg = 'メッシュに三角形がありません。メッシュ生成に失敗している可能性があります。';
+                                    showError(errorMsg);
                                     reject(new Error('Mesh has no triangles'));
                                     return;
                                 }
                                 
-                                // 大きなメッシュの場合は警告
+                                // 大きなメッシュの場合は警告とエラー
                                 const MAX_TRIANGLES = 1000000; // 100万三角形まで
+                                const WARNING_TRIANGLES = 500000; // 50万三角形以上で警告
+                                
                                 if (triangleCount > MAX_TRIANGLES) {
+                                    const errorMsg = `メッシュが大きすぎます (${triangleCount.toLocaleString()} 三角形)。ブラウザで表示できません。\n\n解決方法:\n1. config.yamlで simplify_for_viewer: true に設定\n2. python regenerate_mesh.py ${jobId} existing を実行`;
+                                    showError(errorMsg);
+                                    reject(new Error(`Mesh too large: ${triangleCount.toLocaleString()} triangles`));
+                                    return;
+                                } else if (triangleCount > WARNING_TRIANGLES) {
                                     console.warn(`Large mesh detected (${triangleCount.toLocaleString()} triangles). This may cause performance issues.`);
+                                    showLoading(`警告: 大きなメッシュ (${triangleCount.toLocaleString()} 三角形)。パフォーマンスに影響する可能性があります。`);
                                 }
                                 
                                 // メッシュに色がある場合はそれを使用、なければデフォルト色
