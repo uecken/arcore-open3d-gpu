@@ -640,6 +640,85 @@ async def process_session(job_id: str, session_dir: Path):
                     except Exception as e:
                         print(f"[{job_id}] ⚠ Smoothing error: {e}")
                 
+                # 3. メッシュ品質向上処理（細分化、法線改善、色補正）
+                quality_config = mesh_config.get('quality_improvement', {})
+                if quality_config.get('enable', True):
+                    # 3-1. メッシュ細分化（Subdivision）
+                    subdivision_config = quality_config.get('subdivision', {})
+                    if subdivision_config.get('enable', True):
+                        subdiv_method = subdivision_config.get('method', 'loop')
+                        subdiv_iterations = subdivision_config.get('iterations', 1)
+                        
+                        if subdiv_iterations > 0:
+                            print(f"[{job_id}] Subdividing mesh ({subdiv_method}, {subdiv_iterations} iterations)...")
+                            try:
+                                if subdiv_method == 'loop':
+                                    mesh = mesh.subdivide_loop(number_of_iterations=subdiv_iterations)
+                                elif subdiv_method == 'midpoint':
+                                    mesh = mesh.subdivide_midpoint(number_of_iterations=subdiv_iterations)
+                                else:
+                                    print(f"[{job_id}] ⚠ Unknown subdivision method: {subdiv_method}, using loop")
+                                    mesh = mesh.subdivide_loop(number_of_iterations=subdiv_iterations)
+                                print(f"[{job_id}] ✓ Mesh subdivided: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
+                            except Exception as e:
+                                print(f"[{job_id}] ⚠ Subdivision error: {e}")
+                    
+                    # 3-2. 法線の改善
+                    normal_config = quality_config.get('normal_improvement', {})
+                    if normal_config.get('enable', True):
+                        print(f"[{job_id}] Improving normals...")
+                        try:
+                            # より高品質な法線計算
+                            mesh.compute_vertex_normals(
+                                normalized=True
+                            )
+                            if normal_config.get('smooth_normals', True):
+                                # 法線の平滑化（オプション）
+                                mesh.normalize_normals()
+                            print(f"[{job_id}] ✓ Normals improved")
+                        except Exception as e:
+                            print(f"[{job_id}] ⚠ Normal improvement error: {e}")
+                    
+                    # 3-3. 色の補正と強化
+                    color_config = quality_config.get('color_enhancement', {})
+                    if color_config.get('enable', True) and mesh.has_vertex_colors():
+                        print(f"[{job_id}] Enhancing colors...")
+                        try:
+                            colors = np.asarray(mesh.vertex_colors)
+                            contrast = color_config.get('contrast', 1.0)
+                            saturation = color_config.get('saturation', 1.0)
+                            brightness = color_config.get('brightness', 1.0)
+                            
+                            # コントラスト調整
+                            if contrast != 1.0:
+                                colors = (colors - 0.5) * contrast + 0.5
+                            
+                            # 彩度調整（HSV変換）
+                            if saturation != 1.0:
+                                # RGB to HSV
+                                hsv = np.zeros_like(colors)
+                                max_val = colors.max(axis=1, keepdims=True)
+                                min_val = colors.min(axis=1, keepdims=True)
+                                delta = max_val - min_val
+                                
+                                # Saturation adjustment
+                                hsv[:, 1] = np.clip(delta[:, 0] * saturation, 0, 1)
+                                hsv[:, 2] = max_val[:, 0]  # Value
+                                
+                                # 簡易的な彩度調整（より簡単な方法）
+                                gray = np.mean(colors, axis=1, keepdims=True)
+                                colors = gray + (colors - gray) * saturation
+                            
+                            # 明度調整
+                            if brightness != 1.0:
+                                colors = colors * brightness
+                            
+                            colors = np.clip(colors, 0, 1)
+                            mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
+                            print(f"[{job_id}] ✓ Colors enhanced (contrast={contrast}, saturation={saturation}, brightness={brightness})")
+                        except Exception as e:
+                            print(f"[{job_id}] ⚠ Color enhancement error: {e}")
+                
                 # 3. メッシュが大きすぎる場合は簡略化（ビューアー用、設定でON/OFF可能）
                 output_config = CONFIG.get('output', {})
                 mesh_output_config = output_config.get('mesh', {})

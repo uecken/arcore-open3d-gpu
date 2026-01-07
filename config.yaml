@@ -62,6 +62,26 @@ mesh:
     remove_duplicates: true
     remove_degenerate: true
     orient_normals: true
+  
+  # メッシュ品質向上（表示品質改善）
+  quality_improvement:
+    enable: true
+    # メッシュ細分化（Subdivision）- 滑らかな表面を実現
+    subdivision:
+      enable: true
+      method: "loop"            # loop or midpoint
+      iterations: 1             # 細分化の反復回数（1-2推奨、多すぎるとメモリ使用量が増加）
+    # 法線の改善
+    normal_improvement:
+      enable: true
+      method: "weighted"        # weighted or simple
+      smooth_normals: true      # 法線の平滑化
+    # 色の補正と強化
+    color_enhancement:
+      enable: true
+      contrast: 1.1             # コントラスト調整（1.0 = 変更なし、>1.0 = 強化）
+      saturation: 1.1           # 彩度調整（1.0 = 変更なし、>1.0 = 強化）
+      brightness: 1.0           # 明度調整（1.0 = 変更なし）
 
 depth_estimation:
   enable: true
