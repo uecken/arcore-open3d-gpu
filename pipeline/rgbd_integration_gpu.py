@@ -48,6 +48,7 @@ class RGBDIntegrationGPU:
         
         self.volume = None
         self.intrinsic = None
+        self.is_tensor_volume = False  # Tensor APIのTSDFVolumeかどうかのフラグ
         
     def _initialize_device(self):
         """Open3DのGPUデバイスを初期化"""
@@ -339,19 +340,24 @@ class RGBDIntegrationGPU:
                 print("    Consider using voxel_length >= 0.005 (5mm) for better memory efficiency.")
             
             # Tensor APIのTSDFVolumeを試みる（GPU対応）
-            if self.use_gpu and hasattr(o3d, 't') and hasattr(o3d.t, 'pipelines') and hasattr(o3d.t.pipelines, 'slam'):
+            if self.use_gpu and hasattr(o3d, 't') and hasattr(o3d.t, 'pipelines'):
                 try:
-                    # Tensor APIのTSDFVolumeを使用（GPU対応）
-                    print("  Attempting to use Tensor API TSDFVolume (GPU)...")
-                    self.volume = o3d.t.pipelines.slam.TSDFVolume(
-                        voxel_length=self.voxel_length,
-                        sdf_trunc=self.sdf_trunc,
-                        color_type=o3d.core.TensorDtype.UInt8,
-                        device=self.o3d_device
-                    )
-                    print(f"  ✓ Tensor API TSDFVolume created on {self.o3d_device} (GPU)")
-                    return self.volume
-                except Exception as e:
+                    # Tensor APIのTSDFVolumeが存在するか確認
+                    if hasattr(o3d.t.pipelines, 'slam') and hasattr(o3d.t.pipelines.slam, 'TSDFVolume'):
+                        # Tensor APIのTSDFVolumeを使用（GPU対応）
+                        print("  Attempting to use Tensor API TSDFVolume (GPU)...")
+                        self.volume = o3d.t.pipelines.slam.TSDFVolume(
+                            voxel_length=self.voxel_length,
+                            sdf_trunc=self.sdf_trunc,
+                            color_type=o3d.core.TensorDtype.UInt8,
+                            device=self.o3d_device
+                        )
+                        self.is_tensor_volume = True
+                        print(f"  ✓ Tensor API TSDFVolume created on {self.o3d_device} (GPU)")
+                        return self.volume
+                    else:
+                        print("  ⚠ Tensor API TSDFVolume not available in this Open3D version")
+                except (AttributeError, Exception) as e:
                     print(f"  ⚠ Tensor API TSDFVolume failed: {e}")
                     print("  Falling back to ScalableTSDFVolume (CPU)...")
             
@@ -362,6 +368,7 @@ class RGBDIntegrationGPU:
                 sdf_trunc=self.sdf_trunc,
                 color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8
             )
+            self.is_tensor_volume = False
             return self.volume
             
         except Exception as e:
