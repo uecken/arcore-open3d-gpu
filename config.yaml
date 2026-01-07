@@ -115,7 +115,7 @@ output:
     simplify: false
     target_triangles: 100000
     # ビューアー表示用の簡略化設定
-    simplify_for_viewer: false  # web表示用の簡略化を有効にするか（true/false）
+    simplify_for_viewer: true  # web表示用の簡略化を有効にするか（true/false）- 大きなメッシュ（1GB以上）は必須
     max_triangles_for_viewer: 500000  # ビューアー表示用の最大三角形数（50万、simplify_for_viewer=trueの場合のみ適用）
 
 # ビューアー設定

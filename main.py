@@ -777,19 +777,13 @@ async def process_session(job_id: str, session_dir: Path):
                 output_config = CONFIG.get('output', {})
                 mesh_output_config = output_config.get('mesh', {})
                 simplify_for_viewer = mesh_output_config.get('simplify_for_viewer', True)  # デフォルト: true
-                max_triangles = mesh_output_config.get('max_triangles_for_viewer', 500000)  # 50万三角形まで（ビューアー用）
+                max_triangles = mesh_output_config.get('max_triangles_for_viewer', 1000000)  # 100万三角形まで
                 
                 original_triangles = len(mesh.triangles)
                 mesh_to_save = mesh
                 
-                # ビューアーで読み込めるように、大きなメッシュは必ず簡略化（設定に関係なく）
-                # Three.jsのPLYLoaderは大きなASCII形式のPLYファイルを正しく読み込めない可能性がある
-                if original_triangles > max_triangles:
-                    if simplify_for_viewer:
-                        print(f"[{job_id}] ⚠ Mesh too large ({original_triangles} triangles), simplifying to {max_triangles} for viewer...")
-                    else:
-                        print(f"[{job_id}] ⚠ Mesh too large ({original_triangles} triangles), forcing simplification to {max_triangles} for viewer compatibility...")
-                    
+                if simplify_for_viewer and original_triangles > max_triangles:
+                    print(f"[{job_id}] ⚠ Mesh too large ({original_triangles} triangles), simplifying to {max_triangles} for viewer...")
                     try:
                         # 簡略化（品質を保ちながら）
                         mesh_simplified = mesh.simplify_quadric_decimation(max_triangles)
@@ -807,7 +801,7 @@ async def process_session(job_id: str, session_dir: Path):
                     except Exception as e:
                         print(f"[{job_id}] ⚠ Simplification error: {e}, using original mesh")
                 elif not simplify_for_viewer:
-                    print(f"[{job_id}] ℹ Viewer simplification is disabled, but mesh is small enough ({original_triangles} triangles)")
+                    print(f"[{job_id}] ℹ Viewer simplification is disabled (simplify_for_viewer=false), using original mesh ({original_triangles} triangles)")
                 
                 # メッシュを保存（ASCII形式で保存、Three.jsのPLYLoaderと互換性がある）
                 # 注意: 大きなメッシュの場合はASCII形式でもファイルサイズが大きくなる
