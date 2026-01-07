@@ -70,7 +70,9 @@ mesh:
     subdivision:
       enable: true
       method: "loop"            # loop or midpoint
-      iterations: 1             # 細分化の反復回数（1-2推奨、多すぎるとメモリ使用量が増加）
+      iterations: 1             # 細分化の反復回数（1推奨、多すぎるとメモリ使用量が増加）
+      max_iterations: 1        # 最大反復回数（メモリ保護のため、デフォルト1）
+      max_triangles: 3000000    # この三角形数以上は細分化をスキップ（メモリ保護）
     # 法線の改善
     normal_improvement:
       enable: true

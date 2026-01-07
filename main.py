@@ -648,25 +648,74 @@ async def process_session(job_id: str, session_dir: Path):
                 # 3. メッシュ品質向上処理（細分化、法線改善、色補正）
                 quality_config = mesh_config.get('quality_improvement', {})
                 if quality_config.get('enable', True):
-                    # 3-1. メッシュ細分化（Subdivision）
+                    # 3-1. メッシュ細分化（Subdivision）- 多様体チェックとメモリ保護付き
                     subdivision_config = quality_config.get('subdivision', {})
                     if subdivision_config.get('enable', True):
                         subdiv_method = subdivision_config.get('method', 'loop')
                         subdiv_iterations = subdivision_config.get('iterations', 1)
                         
                         if subdiv_iterations > 0:
-                            print(f"[{job_id}] Subdividing mesh ({subdiv_method}, {subdiv_iterations} iterations)...")
-                            try:
-                                if subdiv_method == 'loop':
-                                    mesh = mesh.subdivide_loop(number_of_iterations=subdiv_iterations)
-                                elif subdiv_method == 'midpoint':
-                                    mesh = mesh.subdivide_midpoint(number_of_iterations=subdiv_iterations)
-                                else:
-                                    print(f"[{job_id}] ⚠ Unknown subdivision method: {subdiv_method}, using loop")
-                                    mesh = mesh.subdivide_loop(number_of_iterations=subdiv_iterations)
-                                print(f"[{job_id}] ✓ Mesh subdivided: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
-                            except Exception as e:
-                                print(f"[{job_id}] ⚠ Subdivision error: {e}")
+                            # メモリ保護: 大きなメッシュの場合は細分化をスキップ
+                            triangle_count = len(mesh.triangles)
+                            if triangle_count > 3000000:  # 300万三角形以上は細分化をスキップ
+                                print(f"[{job_id}] ⚠ Large mesh ({triangle_count} triangles), skipping subdivision to prevent memory issues")
+                                subdiv_iterations = 0
+                            
+                            if subdiv_iterations > 0:
+                                print(f"[{job_id}] Checking mesh manifoldness before subdivision...")
+                                try:
+                                    # メッシュの多様体性を確認
+                                    is_edge_manifold = mesh.is_edge_manifold(allow_boundary_edges=True)
+                                    is_vertex_manifold = mesh.is_vertex_manifold()
+                                    
+                                    if not is_edge_manifold or not is_vertex_manifold:
+                                        print(f"[{job_id}] ⚠ Mesh is not manifold (edge_manifold: {is_edge_manifold}, vertex_manifold: {is_vertex_manifold})")
+                                        print(f"[{job_id}]   Attempting to fix non-manifold mesh...")
+                                        
+                                        # 非多様体エッジと頂点を削除
+                                        mesh.remove_non_manifold_edges()
+                                        mesh.remove_non_manifold_vertices()
+                                        mesh.remove_duplicated_triangles()
+                                        mesh.remove_duplicated_vertices()
+                                        mesh.remove_unreferenced_vertices()
+                                        
+                                        # 再度確認
+                                        is_edge_manifold = mesh.is_edge_manifold(allow_boundary_edges=True)
+                                        is_vertex_manifold = mesh.is_vertex_manifold()
+                                        
+                                        if not is_edge_manifold or not is_vertex_manifold:
+                                            print(f"[{job_id}] ⚠ Mesh is still not manifold, skipping subdivision to prevent errors")
+                                            subdiv_iterations = 0
+                                        else:
+                                            print(f"[{job_id}] ✓ Mesh is now manifold, proceeding with subdivision")
+                                    
+                                    if subdiv_iterations > 0:
+                                        # 反復回数を制限（メモリ保護）
+                                        max_iterations = subdivision_config.get('max_iterations', 1)
+                                        subdiv_iterations = min(subdiv_iterations, max_iterations)
+                                        
+                                        print(f"[{job_id}] Subdividing mesh ({subdiv_method}, {subdiv_iterations} iterations)...")
+                                        
+                                        if subdiv_method == 'loop':
+                                            mesh = mesh.subdivide_loop(number_of_iterations=subdiv_iterations)
+                                        elif subdiv_method == 'midpoint':
+                                            mesh = mesh.subdivide_midpoint(number_of_iterations=subdiv_iterations)
+                                        else:
+                                            print(f"[{job_id}] ⚠ Unknown subdivision method: {subdiv_method}, using loop")
+                                            mesh = mesh.subdivide_loop(number_of_iterations=subdiv_iterations)
+                                        
+                                        # 細分化後のクリーンアップ
+                                        mesh.remove_duplicated_triangles()
+                                        mesh.remove_duplicated_vertices()
+                                        mesh.remove_non_manifold_edges()
+                                        mesh.compute_vertex_normals()
+                                        
+                                        print(f"[{job_id}] ✓ Mesh subdivided: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
+                                except Exception as e:
+                                    print(f"[{job_id}] ⚠ Subdivision error: {e}")
+                                    import traceback
+                                    traceback.print_exc()
+                                    # エラーが発生した場合は細分化をスキップして続行
                     
                     # 3-2. 法線の改善
                     normal_config = quality_config.get('normal_improvement', {})
