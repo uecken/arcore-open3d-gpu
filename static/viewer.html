@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open3D 3D Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'JetBrains Mono', 'Consolas', monospace;
+            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0f0f1a 100%);
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: rgba(20, 20, 30, 0.95);
+            border-bottom: 1px solid rgba(0, 200, 150, 0.3);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+        
+        .logo {
+            font-size: 18px;
+            font-weight: bold;
+            color: #00c896;
+            margin-right: 30px;
+        }
+        
+        .logo span {
+            color: #00aaff;
+        }
+        
+        /* Job selector */
+        .job-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .job-selector label {
+            color: #888;
+            font-size: 12px;
+        }
+        
+        .job-selector select {
+            background: rgba(30, 30, 45, 0.9);
+            border: 1px solid rgba(0, 200, 150, 0.3);
+            color: #e0e0e0;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 12px;
+            min-width: 250px;
+            cursor: pointer;
+        }
+        
+        .job-selector select:focus {
+            outline: none;
+            border-color: #00c896;
+        }
+        
+        /* View controls */
+        .view-controls {
+            display: flex;
+            gap: 5px;
+            margin-left: 20px;
+        }
+        
+        .view-btn {
+            background: rgba(40, 40, 60, 0.9);
+            border: 1px solid rgba(100, 100, 120, 0.3);
+            color: #888;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .view-btn:hover {
+            border-color: rgba(0, 200, 150, 0.5);
+            color: #ccc;
+        }
+        
+        .view-btn.active {
+            background: rgba(0, 200, 150, 0.2);
+            border-color: #00c896;
+            color: #00c896;
+        }
+        
+        .view-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        /* Stats */
+        .stats {
+            margin-left: auto;
+            display: flex;
+            gap: 20px;
+            font-size: 11px;
+        }
+        
+        .stat {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .stat-value {
+            color: #00c896;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 10px;
+        }
+        
+        /* 3D Canvas */
+        #viewer-container {
+            position: fixed;
+            top: 50px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        
+        #canvas-3d {
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* Side Panel */
+        .side-panel {
+            position: fixed;
+            top: 60px;
+            right: 10px;
+            width: 260px;
+            background: rgba(20, 20, 30, 0.9);
+            border: 1px solid rgba(0, 200, 150, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            backdrop-filter: blur(10px);
+            z-index: 50;
+        }
+        
+        .panel-title {
+            color: #00c896;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(0, 200, 150, 0.2);
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 11px;
+        }
+        
+        .info-label {
+            color: #666;
+        }
+        
+        .info-value {
+            color: #ccc;
+            font-weight: 500;
+        }
+        
+        .info-value.success {
+            color: #00c896;
+        }
+        
+        .info-value.warning {
+            color: #ffaa00;
+        }
+        
+        /* RFID List */
+        .rfid-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        
+        .rfid-item {
+            background: rgba(40, 40, 60, 0.5);
+            border-radius: 4px;
+            padding: 8px;
+            margin-bottom: 5px;
+            font-size: 10px;
+        }
+        
+        .rfid-epc {
+            color: #00aaff;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        
+        .rfid-rssi {
+            color: #888;
+            margin-top: 4px;
+        }
+        
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 50px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(10, 10, 15, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+        }
+        
+        .loading-overlay.hidden {
+            display: none;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(0, 200, 150, 0.2);
+            border-top-color: #00c896;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            margin-top: 15px;
+            color: #888;
+            font-size: 12px;
+        }
+        
+        /* Controls help */
+        .controls-help {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(20, 20, 30, 0.8);
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-size: 10px;
+            color: #666;
+            z-index: 50;
+        }
+        
+        .controls-help kbd {
+            background: rgba(60, 60, 80, 0.5);
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">Open3D <span>Viewer</span></div>
+        
+        <div class="job-selector">
+            <label>JOB:</label>
+            <select id="job-select">
+                <option value="">-- Select a job --</option>
+            </select>
+        </div>
+        
+        <div class="view-controls">
+            <button id="btn-pointcloud" class="view-btn active" disabled>Point Cloud</button>
+            <button id="btn-mesh" class="view-btn" disabled>Mesh</button>
+            <button id="btn-rfid" class="view-btn" disabled>RFID</button>
+        </div>
+        
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-value" id="point-count">0</span>
+                <span class="stat-label">Points</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="face-count">0</span>
+                <span class="stat-label">Faces</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="rfid-count">0</span>
+                <span class="stat-label">RFIDs</span>
+            </div>
+        </div>
+    </header>
+    
+    <!-- 3D Viewer -->
+    <div id="viewer-container">
+        <canvas id="canvas-3d"></canvas>
+    </div>
+    
+    <!-- Side Panel -->
+    <div class="side-panel">
+        <div class="panel-title">JOB INFO</div>
+        <div class="info-row">
+            <span class="info-label">Job ID:</span>
+            <span class="info-value" id="info-job-id">-</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Status:</span>
+            <span class="info-value success" id="info-status">-</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Mode:</span>
+            <span class="info-value" id="info-mode">-</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Depth Source:</span>
+            <span class="info-value" id="info-depth-source">-</span>
+        </div>
+        
+        <div class="panel-title" style="margin-top: 15px;">RFID DETECTIONS</div>
+        <div class="rfid-list" id="rfid-list">
+            <div style="color: #666; font-size: 11px;">No RFID data</div>
+        </div>
+    </div>
+    
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text" id="loading-text">Loading...</div>
+    </div>
+    
+    <!-- Controls Help -->
+    <div class="controls-help">
+        <kbd>Drag</kbd> Rotate &nbsp;
+        <kbd>Scroll</kbd> Zoom &nbsp;
+        <kbd>Right-drag</kbd> Pan &nbsp;
+        <kbd>R</kbd> Reset
+    </div>
+    
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
+    <script>
+        // サービスワーカーのエラーを無視（ブラウザ拡張機能によるもの）
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                for(let registration of registrations) {
+                    registration.unregister();
+                }
+            }).catch(function(error) {
+                // エラーを無視
+            });
+        }
+        
+        // OrbitControlsとPLYLoaderがグローバルに利用可能になるまで待つ
+        if (typeof THREE !== 'undefined') {
+            // OrbitControlsとPLYLoaderはexamples/jsから読み込まれる
+            console.log('Three.js loaded');
+        }
+        
+        // 未処理のPromiseエラーをキャッチ（サービスワーカーのエラーを無視）
+        window.addEventListener('unhandledrejection', function(event) {
+            if (event.reason && event.reason.message && 
+                event.reason.message.includes('Could not establish connection')) {
+                // サービスワーカー関連のエラーを無視
+                event.preventDefault();
+                console.log('Ignored service worker error');
+            }
+        });
+    </script>
+    
+    <script>
+        // ============================================================
+        // Configuration
+        // ============================================================
+        const API_BASE = window.location.origin;
+        
+        // ============================================================
+        // State
+        // ============================================================
+        let scene, camera, renderer, controls;
+        let pointCloud = null;
+        let mesh = null;
+        let rfidMarkers = [];
+        let currentJobId = null;
+        let availableFiles = {};
+        let displayMode = 'pointcloud'; // pointcloud, mesh, rfid
+        
+        // ============================================================
+        // Initialization
+        // ============================================================
+        function initViewer() {
+            const container = document.getElementById('viewer-container');
+            const canvas = document.getElementById('canvas-3d');
+            
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a0f);
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(
+                60,
+                container.clientWidth / container.clientHeight,
+                0.01,
+                1000
+            );
+            camera.position.set(2, 2, 2);
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.1;
+            controls.screenSpacePanning = true;
+            
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 10, 5);
+            scene.add(directionalLight);
+            
+            // Grid
+            const gridHelper = new THREE.GridHelper(10, 50, 0x00c896, 0x1a1a2e);
+            gridHelper.position.y = -0.01;
+            scene.add(gridHelper);
+            
+            // Axes
+            const axesHelper = new THREE.AxesHelper(1);
+            scene.add(axesHelper);
+            
+            // Events
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('keydown', onKeyDown);
+            
+            // Start render loop
+            animate();
+        }
+        
+        function onWindowResize() {
+            const container = document.getElementById('viewer-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+        
+        function onKeyDown(event) {
+            if (event.key === 'r' || event.key === 'R') {
+                controls.reset();
+                camera.position.set(2, 2, 2);
+            }
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        // ============================================================
+        // Loading UI
+        // ============================================================
+        function showLoading(text = 'Loading...') {
+            document.getElementById('loading-text').textContent = text;
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+        
+        // ============================================================
+        // Job Loading
+        // ============================================================
+        async function loadJobList() {
+            try {
+                console.log('Loading job list from:', `${API_BASE}/api/v1/jobs`);
+                const response = await fetch(`${API_BASE}/api/v1/jobs`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Job list response:', data);
+                
+                const select = document.getElementById('job-select');
+                select.innerHTML = '<option value="">-- Select a job --</option>';
+                
+                const jobs = data.jobs || {};
+                console.log('Jobs found:', Object.keys(jobs).length);
+                
+                // 完了したジョブだけでなく、すべてのジョブを表示（処理中も含む）
+                const sortedJobs = Object.entries(jobs)
+                    .sort((a, b) => {
+                        const dateA = a[1].created_at ? new Date(a[1].created_at) : new Date(0);
+                        const dateB = b[1].created_at ? new Date(b[1].created_at) : new Date(0);
+                        return dateB - dateA;
+                    });
+                
+                console.log('Sorted jobs:', sortedJobs.length);
+                
+                for (const [jobId, job] of sortedJobs) {
+                    const option = document.createElement('option');
+                    option.value = jobId;
+                    const date = job.created_at ? new Date(job.created_at).toLocaleString() : 'Unknown';
+                    const mode = job.mode ? ` [${job.mode.toUpperCase()}]` : '';
+                    const status = job.status ? ` [${job.status.toUpperCase()}]` : '';
+                    option.textContent = `${jobId}${mode}${status} (${date})`;
+                    select.appendChild(option);
+                }
+                
+                // 完了したジョブを優先的に選択
+                const completedJobs = sortedJobs.filter(([id, job]) => job.status === 'completed');
+                
+                // Auto-select from URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const urlJobId = urlParams.get('job_id');
+                
+                if (urlJobId && sortedJobs.some(([id]) => id === urlJobId)) {
+                    select.value = urlJobId;
+                    loadJob(urlJobId);
+                } else if (completedJobs.length > 0) {
+                    // 最新の完了したジョブを自動選択
+                    select.value = completedJobs[0][0];
+                    loadJob(completedJobs[0][0]);
+                } else if (sortedJobs.length > 0) {
+                    // 完了していなくても最新のジョブを選択
+                    select.value = sortedJobs[0][0];
+                    loadJob(sortedJobs[0][0]);
+                } else {
+                    console.log('No jobs found');
+                    hideLoading();
+                    select.innerHTML = '<option value="">-- No jobs available --</option>';
+                }
+                
+            } catch (error) {
+                console.error('Failed to load jobs:', error);
+                const select = document.getElementById('job-select');
+                select.innerHTML = '<option value="">-- Error loading jobs --</option>';
+                hideLoading();
+                
+                // エラーメッセージを表示
+                const errorMsg = error.message || 'Unknown error';
+                console.error('Error details:', errorMsg);
+            }
+        }
+        
+        async function loadJob(jobId) {
+            if (!jobId) return;
+            
+            currentJobId = jobId;
+            showLoading('Loading job...');
+            clearScene();
+            
+            // Update info panel
+            document.getElementById('info-job-id').textContent = jobId.substring(0, 8);
+            
+            try {
+                // Get job info
+                console.log('Loading job info from:', `${API_BASE}/scenes/${jobId}/info.json`);
+                const infoResponse = await fetch(`${API_BASE}/scenes/${jobId}/info.json`);
+                
+                if (!infoResponse.ok) {
+                    throw new Error(`Failed to load job info: ${infoResponse.status}`);
+                }
+                
+                const info = await infoResponse.json();
+                console.log('Job info:', info);
+                
+                document.getElementById('info-status').textContent = info.status || '-';
+                document.getElementById('info-mode').textContent = (info.mode || '-').toUpperCase();
+                
+                availableFiles = info.available_files || {};
+                
+                // Determine depth source
+                const depthSource = info.result?.depth_source || 'Unknown';
+                document.getElementById('info-depth-source').textContent = depthSource;
+                
+                // Update buttons
+                document.getElementById('btn-pointcloud').disabled = !availableFiles['point_cloud.ply'];
+                document.getElementById('btn-mesh').disabled = !availableFiles['mesh.ply'];
+                document.getElementById('btn-rfid').disabled = !availableFiles['rfid_positions.json'];
+                
+                // Load point cloud
+                if (availableFiles['point_cloud.ply']) {
+                    showLoading('Loading point cloud...');
+                    try {
+                        await loadPointCloud(jobId);
+                    } catch (error) {
+                        console.error('Failed to load point cloud:', error);
+                        showLoading('Failed to load point cloud. Trying mesh...');
+                    }
+                }
+                
+                // Load mesh
+                if (availableFiles['mesh.ply']) {
+                    showLoading('Loading mesh...');
+                    try {
+                        await loadMesh(jobId);
+                    } catch (error) {
+                        console.error('Failed to load mesh:', error);
+                        showLoading('Failed to load mesh');
+                    }
+                }
+                
+                // Load RFID
+                if (availableFiles['rfid_positions.json']) {
+                    showLoading('Loading RFID data...');
+                    try {
+                        await loadRFID(jobId);
+                    } catch (error) {
+                        console.error('Failed to load RFID:', error);
+                    }
+                }
+                
+                // Set display mode - メッシュが優先
+                if (mesh) {
+                    setDisplayMode('mesh');
+                } else if (pointCloud) {
+                    setDisplayMode('pointcloud');
+                }
+                
+            } catch (error) {
+                console.error('Failed to load job:', error);
+                showLoading('Error: ' + (error.message || 'Unknown error'));
+                setTimeout(() => hideLoading(), 3000);
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        function clearScene() {
+            if (pointCloud) {
+                scene.remove(pointCloud);
+                pointCloud.geometry?.dispose();
+                pointCloud.material?.dispose();
+                pointCloud = null;
+            }
+            if (mesh) {
+                scene.remove(mesh);
+                mesh.geometry?.dispose();
+                mesh.material?.dispose();
+                mesh = null;
+            }
+            rfidMarkers.forEach(m => {
+                scene.remove(m);
+                m.geometry?.dispose();
+                m.material?.dispose();
+            });
+            rfidMarkers = [];
+            
+            document.getElementById('point-count').textContent = '0';
+            document.getElementById('face-count').textContent = '0';
+            document.getElementById('rfid-count').textContent = '0';
+        }
+        
+        // ============================================================
+        // Load Assets
+        // ============================================================
+        async function loadPointCloud(jobId) {
+            return new Promise((resolve, reject) => {
+                try {
+                    const loader = new THREE.PLYLoader();
+                    const url = `${API_BASE}/scenes/${jobId}/point_cloud.ply`;
+                    
+                    console.log('Loading point cloud from:', url);
+                    
+                    loader.load(url,
+                        (geometry) => {
+                            try {
+                                console.log('Point cloud loaded, processing...');
+                                
+                                geometry.computeBoundingBox();
+                                
+                                // Center
+                                const center = new THREE.Vector3();
+                                geometry.boundingBox.getCenter(center);
+                                geometry.translate(-center.x, -center.y, -center.z);
+                                
+                                // 大きな点群の場合はダウンサンプリング（表示用）
+                                const positions = geometry.attributes.position;
+                                const MAX_POINTS = 1000000; // 100万点まで
+                                
+                                if (positions.count > MAX_POINTS) {
+                                    console.log(`Point cloud too large (${positions.count} points), downsampling to ${MAX_POINTS}...`);
+                                    
+                                    // 均等にサンプリング
+                                    const step = Math.ceil(positions.count / MAX_POINTS);
+                                    const indices = [];
+                                    for (let i = 0; i < positions.count; i += step) {
+                                        indices.push(i);
+                                    }
+                                    
+                                    // 新しいgeometryを作成
+                                    const newPositions = new Float32Array(indices.length * 3);
+                                    const newColors = positions.count > 0 && geometry.attributes.color 
+                                        ? new Float32Array(indices.length * 3) 
+                                        : null;
+                                    
+                                    for (let i = 0; i < indices.length; i++) {
+                                        const idx = indices[i];
+                                        newPositions[i * 3] = positions.getX(idx);
+                                        newPositions[i * 3 + 1] = positions.getY(idx);
+                                        newPositions[i * 3 + 2] = positions.getZ(idx);
+                                        
+                                        if (newColors && geometry.attributes.color) {
+                                            const color = geometry.attributes.color;
+                                            newColors[i * 3] = color.getX(idx);
+                                            newColors[i * 3 + 1] = color.getY(idx);
+                                            newColors[i * 3 + 2] = color.getZ(idx);
+                                        }
+                                    }
+                                    
+                                    geometry = new THREE.BufferGeometry();
+                                    geometry.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
+                                    if (newColors) {
+                                        geometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
+                                    }
+                                    
+                                    console.log(`Downsampled to ${indices.length} points`);
+                                }
+                                
+                                // Colors (height-based if no vertex colors)
+                                let colors = geometry.attributes.color;
+                                
+                                if (!colors) {
+                                    const positions = geometry.attributes.position;
+                                    const colorsArray = new Float32Array(positions.count * 3);
+                                    const bbox = geometry.boundingBox;
+                                    const minY = bbox.min.y, maxY = bbox.max.y;
+                                    const rangeY = maxY - minY || 1;
+                                    
+                                    for (let i = 0; i < positions.count; i++) {
+                                        const y = positions.getY(i);
+                                        const t = (y - minY) / rangeY;
+                                        const color = new THREE.Color();
+                                        color.setHSL(0.5 - t * 0.3, 0.8, 0.5);
+                                        colorsArray[i * 3] = color.r;
+                                        colorsArray[i * 3 + 1] = color.g;
+                                        colorsArray[i * 3 + 2] = color.b;
+                                    }
+                                    geometry.setAttribute('color', new THREE.BufferAttribute(colorsArray, 3));
+                                }
+                                
+                                const material = new THREE.PointsMaterial({
+                                    size: 0.005,
+                                    vertexColors: true,
+                                    sizeAttenuation: true
+                                });
+                                
+                                pointCloud = new THREE.Points(geometry, material);
+                                scene.add(pointCloud);
+                                
+                                const pointCount = geometry.attributes.position.count;
+                                document.getElementById('point-count').textContent = pointCount.toLocaleString();
+                                
+                                fitCameraToObject(pointCloud);
+                                console.log('Point cloud loaded successfully');
+                                resolve();
+                            } catch (error) {
+                                console.error('Error processing point cloud:', error);
+                                reject(error);
+                            }
+                        },
+                        (progress) => {
+                            // ローディング進捗
+                            if (progress.lengthComputable) {
+                                const percent = (progress.loaded / progress.total) * 100;
+                                console.log(`Loading point cloud: ${percent.toFixed(1)}%`);
+                            }
+                        },
+                        (error) => {
+                            console.error('PLY load error:', error);
+                            reject(error);
+                        }
+                    );
+                } catch (error) {
+                    console.error('Error loading point cloud:', error);
+                    reject(error);
+                }
+            });
+        }
+        
+        async function loadMesh(jobId) {
+            return new Promise((resolve, reject) => {
+                try {
+                    const loader = new THREE.PLYLoader();
+                    const url = `${API_BASE}/scenes/${jobId}/mesh.ply`;
+                    
+                    console.log('Loading mesh from:', url);
+                    
+                    loader.load(url,
+                        (geometry) => {
+                            try {
+                                console.log('Mesh loaded, processing...');
+                                
+                                geometry.computeVertexNormals();
+                                geometry.computeBoundingBox();
+                                
+                                // Center
+                                const center = new THREE.Vector3();
+                                geometry.boundingBox.getCenter(center);
+                                geometry.translate(-center.x, -center.y, -center.z);
+                                
+                                // メッシュのサイズ確認
+                                const triangleCount = geometry.index ? geometry.index.count / 3 : 0;
+                                console.log(`Mesh loaded: ${triangleCount.toLocaleString()} triangles`);
+                                
+                                if (triangleCount === 0) {
+                                    console.error('ERROR: Mesh has no triangles!');
+                                    reject(new Error('Mesh has no triangles'));
+                                    return;
+                                }
+                                
+                                // 大きなメッシュの場合は警告
+                                const MAX_TRIANGLES = 1000000; // 100万三角形まで
+                                if (triangleCount > MAX_TRIANGLES) {
+                                    console.warn(`Large mesh detected (${triangleCount.toLocaleString()} triangles). This may cause performance issues.`);
+                                }
+                                
+                                // メッシュに色がある場合はそれを使用、なければデフォルト色
+                                let material;
+                                if (geometry.attributes.color) {
+                                    material = new THREE.MeshStandardMaterial({
+                                        vertexColors: true,
+                                        roughness: 0.6,
+                                        metalness: 0.2,
+                                        flatShading: false,
+                                        side: THREE.DoubleSide
+                                    });
+                                } else {
+                                    material = new THREE.MeshStandardMaterial({
+                                        color: 0x00c896,
+                                        roughness: 0.6,
+                                        metalness: 0.2,
+                                        flatShading: false,
+                                        side: THREE.DoubleSide
+                                    });
+                                }
+                                
+                                mesh = new THREE.Mesh(geometry, material);
+                                // メッシュは読み込まれたら表示する（デフォルトで表示）
+                                mesh.visible = true;
+                                scene.add(mesh);
+                                
+                                const faceCount = geometry.index ? geometry.index.count / 3 : 0;
+                                document.getElementById('face-count').textContent = Math.floor(faceCount).toLocaleString();
+                                
+                                // カメラをメッシュに合わせる
+                                fitCameraToObject(mesh);
+                                
+                                console.log('Mesh loaded successfully');
+                                resolve();
+                            } catch (error) {
+                                console.error('Error processing mesh:', error);
+                                reject(error);
+                            }
+                        },
+                        (progress) => {
+                            // ローディング進捗
+                            if (progress.lengthComputable) {
+                                const percent = (progress.loaded / progress.total) * 100;
+                                console.log(`Loading mesh: ${percent.toFixed(1)}%`);
+                            }
+                        },
+                        (error) => {
+                            console.error('Mesh load error:', error);
+                            reject(error);
+                        }
+                    );
+                } catch (error) {
+                    console.error('Error loading mesh:', error);
+                    reject(error);
+                }
+            });
+        }
+        
+        async function loadRFID(jobId) {
+            try {
+                const response = await fetch(`${API_BASE}/scenes/${jobId}/rfid_positions.json`);
+                const data = await response.json();
+                
+                const rfidList = document.getElementById('rfid-list');
+                rfidList.innerHTML = '';
+                
+                // データ構造の対応: detections または tags
+                const detections = data.detections || data.tags || [];
+                
+                if (detections.length === 0) {
+                    rfidList.innerHTML = '<div style="color: #666; font-size: 11px;">No RFID data</div>';
+                    document.getElementById('rfid-count').textContent = '0';
+                    return;
+                }
+                
+                detections.forEach((detection, index) => {
+                    // Create marker
+                    const geometry = new THREE.SphereGeometry(0.03, 16, 16);
+                    const material = new THREE.MeshBasicMaterial({ color: 0xff6600 });
+                    const marker = new THREE.Mesh(geometry, material);
+                    
+                    // 位置情報の取得（position または pose.position）
+                    if (detection.position) {
+                        marker.position.set(detection.position.x, detection.position.y, detection.position.z);
+                    } else if (detection.pose && detection.pose.position) {
+                        marker.position.set(detection.pose.position.x, detection.pose.position.y, detection.pose.position.z);
+                    }
+                    
+                    marker.visible = false;
+                    scene.add(marker);
+                    rfidMarkers.push(marker);
+                    
+                    // Add to list
+                    const item = document.createElement('div');
+                    item.className = 'rfid-item';
+                    const tagId = detection.tag_id || detection.epc || `Tag ${index + 1}`;
+                    const rssi = detection.rssi !== undefined ? `${detection.rssi} dBm` : 'N/A';
+                    item.innerHTML = `
+                        <div class="rfid-epc">${tagId}</div>
+                        <div class="rfid-rssi">RSSI: ${rssi}</div>
+                    `;
+                    rfidList.appendChild(item);
+                });
+                
+                document.getElementById('rfid-count').textContent = detections.length.toString();
+                
+            } catch (error) {
+                console.error('RFID load error:', error);
+            }
+        }
+        
+        // ============================================================
+        // Display Modes
+        // ============================================================
+        function setDisplayMode(mode) {
+            displayMode = mode;
+            
+            // Update buttons
+            document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`btn-${mode}`).classList.add('active');
+            
+            // Update visibility
+            if (pointCloud) pointCloud.visible = (mode === 'pointcloud' || mode === 'rfid');
+            if (mesh) mesh.visible = (mode === 'mesh' || mode === 'rfid');
+            rfidMarkers.forEach(m => m.visible = (mode === 'rfid'));
+            
+            // Show RFID with other modes if selected
+            if (mode === 'rfid') {
+                if (pointCloud) pointCloud.visible = true;
+                if (mesh) mesh.visible = true;
+                rfidMarkers.forEach(m => m.visible = true);
+            }
+            
+            // メッシュモードの場合はカメラを調整
+            if (mode === 'mesh' && mesh) {
+                fitCameraToObject(mesh);
+            } else if (mode === 'pointcloud' && pointCloud) {
+                fitCameraToObject(pointCloud);
+            }
+        }
+        
+        // ============================================================
+        // Camera
+        // ============================================================
+        function fitCameraToObject(object) {
+            const bbox = new THREE.Box3().setFromObject(object);
+            const center = bbox.getCenter(new THREE.Vector3());
+            const size = bbox.getSize(new THREE.Vector3());
+            
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const fov = camera.fov * (Math.PI / 180);
+            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+            cameraZ *= 1.5;
+            
+            camera.position.set(center.x + cameraZ * 0.5, center.y + cameraZ * 0.5, center.z + cameraZ);
+            controls.target.copy(center);
+            controls.update();
+        }
+        
+        // ============================================================
+        // Event Handlers
+        // ============================================================
+        document.getElementById('job-select').addEventListener('change', (e) => {
+            loadJob(e.target.value);
+        });
+        
+        document.getElementById('btn-pointcloud').addEventListener('click', () => setDisplayMode('pointcloud'));
+        document.getElementById('btn-mesh').addEventListener('click', () => setDisplayMode('mesh'));
+        document.getElementById('btn-rfid').addEventListener('click', () => setDisplayMode('rfid'));
+        
+        // ============================================================
+        // Initialize
+        // ============================================================
+        initViewer();
+        loadJobList();
+    </script>
+</body>
+</html>
+

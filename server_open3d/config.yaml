@@ -1,0 +1,125 @@
+# ARCore + Open3D Server Configuration
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  data_dir: "/opt/arcore-3dmapper-open3d/data"
+  results_dir: "/opt/arcore-3dmapper-open3d/results"
+
+# 処理モード
+# - rgbd: RGB-D Integration (ARCore Depth使用、最高品質)
+# - mvs: Multi-View Stereo (Depthなし、MiDaS推定)
+# - pointcloud: Point Cloud Fusion (ARCore点群直接使用)
+processing:
+  default_mode: "rgbd"
+  
+  # TSDF Volume設定
+  tsdf:
+    voxel_length: 0.003       # 3mm解像度（より高精細、メモリ増）
+    sdf_trunc: 0.024          # 8倍（voxel_lengthの8倍程度）
+    color_type: "RGB8"
+  
+  # Depth設定
+  depth:
+    scale: 1000.0             # mm → m 変換
+    trunc: 3.0                # 3m以上のDepthは無視
+    min_depth: 0.1            # 10cm未満は無視
+    # 深度データのフィルタリング
+    filter_noise: true
+    bilateral_filter: true
+    bilateral_d: 5
+    bilateral_sigma_color: 50.0
+    bilateral_sigma_space: 50.0
+  
+  # 点群フィルタリング
+  pointcloud:
+    voxel_down_size: 0.005    # 5mm（より高解像度）
+    remove_outliers: true
+    nb_neighbors: 30          # より多くの近傍点で判定
+    std_ratio: 1.5            # より厳しい外れ値除去
+    # 追加のフィルタリング
+    radius_outlier_removal: true
+    radius: 0.05
+    min_neighbors: 10
+    # 平滑化
+    smooth: true
+    smooth_iterations: 1
+
+# メッシュ生成
+mesh:
+  # 手法: poisson, ball_pivoting, alpha_shape
+  method: "poisson"
+  
+  poisson:
+    depth: 10                 # より高解像度（9→10）
+    width: 0                  # 0 = auto
+    scale: 1.1
+    linear_fit: false
+    # 密度フィルタリングの調整
+    density_threshold_percentile: 5  # 下位5%を除去（より厳しく）
+  
+  # メッシュ平滑化
+  smoothing:
+    enable: true
+    method: "laplacian"       # laplacian or taubin
+    iterations: 5
+    lambda_filter: 0.5
+  
+  # メッシュ最適化
+  optimization:
+    enable: true
+    remove_duplicates: true
+    remove_degenerate: true
+    orient_normals: true
+  
+  ball_pivoting:
+    radii: [0.005, 0.01, 0.02, 0.04]  # 半径リスト
+  
+  alpha_shape:
+    alpha: 0.03
+
+# ポーズ最適化 (オプション)
+optimization:
+  enable_icp: false           # ICP補正 (処理時間増加)
+  icp:
+    max_correspondence_distance: 0.02  # 2cm
+    max_iterations: 50
+  
+  # Bundle Adjustment (実験的)
+  enable_ba: false
+
+# Monocular Depth Estimation (MiDaS)
+depth_estimation:
+  enable: true                # Depthデータがない場合に使用
+  model: "DPT_Large"          # DPT_Large, DPT_Hybrid, MiDaS_small
+  device: "cuda"              # cuda / cpu
+
+# GPU設定
+gpu:
+  enabled: true
+  device_id: 0
+  # Open3D GPU acceleration (CUDA)
+  use_cuda: true
+
+# 出力設定
+output:
+  point_cloud:
+    format: "ply"             # ply / pcd / xyz
+    with_normals: true
+    with_colors: true
+  
+  mesh:
+    format: "ply"             # ply / obj / stl
+    compute_normals: true
+    simplify: false
+    target_triangles: 100000  # simplify=true時の目標三角形数
+  
+  texture:
+    enable: false             # テクスチャマッピング
+    resolution: 2048
+
+# ログ設定
+logging:
+  level: "INFO"
+  file: "/var/log/arcore-open3d/server.log"
+

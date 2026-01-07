@@ -1,0 +1,33 @@
+# ARCore + Open3D Server Requirements
+
+# 3D Processing
+open3d>=0.18.0
+numpy>=1.26.0
+scipy>=1.12.0
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+aiofiles>=23.2.1
+
+# Image Processing
+pillow>=10.2.0
+opencv-python>=4.9.0
+
+# Deep Learning (Monocular Depth Estimation)
+torch>=2.1.0
+torchvision>=0.16.0
+# timm>=0.9.0  # MiDaS dependency
+
+# File Formats
+plyfile>=1.0.0
+trimesh>=4.1.0
+
+# Configuration
+pyyaml>=6.0.0
+
+# Utilities
+httpx>=0.26.0
+pydantic>=2.5.0
+

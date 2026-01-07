@@ -1,0 +1,97 @@
+# ARCore + Open3D Server Configuration
+
+server:
+  host: "0.0.0.0"
+  port: 8002
+  data_dir: "/opt/arcore-open3d-gpu/data"
+  results_dir: "/opt/arcore-open3d-gpu/results"
+
+processing:
+  default_mode: "rgbd"
+  
+  tsdf:
+    voxel_length: 0.01         # 10mm解像度（低メモリ使用量、メモリが限られている場合の推奨値）
+    sdf_trunc: 0.08            # 8倍（voxel_lengthの8倍程度）
+    color_type: "RGB8"
+  
+  depth:
+    scale: 1000.0
+    trunc: 3.0
+    min_depth: 0.1
+    # 深度データのフィルタリング
+    filter_noise: true
+    bilateral_filter: true
+    bilateral_d: 5
+    bilateral_sigma_color: 50.0
+    bilateral_sigma_space: 50.0
+  
+  pointcloud:
+    voxel_down_size: 0.005     # 5mm（より高解像度）
+    remove_outliers: true
+    nb_neighbors: 30           # より多くの近傍点で判定
+    std_ratio: 1.5             # より厳しい外れ値除去
+    # 追加のフィルタリング
+    radius_outlier_removal: true
+    radius: 0.05
+    min_neighbors: 10
+    # 平滑化
+    smooth: true
+    smooth_iterations: 1
+
+mesh:
+  method: "poisson"
+  
+  poisson:
+    depth: 10                  # より高解像度（9→10）
+    width: 0
+    scale: 1.1
+    linear_fit: false
+    # 密度フィルタリングの調整
+    density_threshold_percentile: 5  # 下位5%を除去（より厳しく）
+  
+  # メッシュ平滑化
+  smoothing:
+    enable: true
+    method: "laplacian"        # laplacian or taubin
+    iterations: 5
+    lambda_filter: 0.5
+  
+  # メッシュ最適化
+  optimization:
+    enable: true
+    remove_duplicates: true
+    remove_degenerate: true
+    orient_normals: true
+
+depth_estimation:
+  enable: true
+  model: "DPT_Large"
+  device: "cuda"
+
+gpu:
+  enabled: true
+  device_id: 0
+  use_cuda: true
+  # CUDA設定
+  cuda_available: true  # CUDAが利用可能かどうか（自動検出も可能）
+  allow_fallback_to_cpu: false  # GPUが利用できない場合にCPUにフォールバックするか
+  # メモリ管理
+  memory_fraction: 0.9  # GPUメモリの使用率（0.0-1.0）
+  allow_growth: true  # メモリを必要に応じて動的に確保
+
+output:
+  point_cloud:
+    format: "ply"
+    with_normals: true
+    with_colors: true
+  
+  mesh:
+    format: "ply"
+    compute_normals: true
+    simplify: false
+    target_triangles: 100000
+    max_triangles_for_viewer: 500000  # ビューアー表示用の最大三角形数（50万）
+
+logging:
+  level: "INFO"
+  file: "/var/log/arcore-open3d/server.log"
