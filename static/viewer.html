@@ -610,19 +610,17 @@
                 document.getElementById('btn-mesh').disabled = !availableFiles['mesh.ply'];
                 document.getElementById('btn-rfid').disabled = !availableFiles['rfid_positions.json'];
                 
-                // Load point cloud
-                if (availableFiles['point_cloud.ply']) {
-                    showLoading('Loading point cloud...');
-                    try {
-                        await loadPointCloud(jobId);
-                    } catch (error) {
-                        console.error('Failed to load point cloud:', error);
-                        showLoading('Failed to load point cloud. Trying mesh...');
-                    }
-                }
+                // ビューアー設定を取得（yaml設定）
+                const viewerConfig = info.viewer_config || {};
+                const autoLoad = viewerConfig.auto_load || {
+                    point_cloud: false,
+                    mesh: true,
+                    rfid: true
+                };
+                const defaultView = viewerConfig.default_view || 'mesh';
                 
-                // Load mesh
-                if (availableFiles['mesh.ply']) {
+                // Load mesh first (優先)
+                if (autoLoad.mesh && availableFiles['mesh.ply']) {
                     showLoading('Loading mesh...');
                     try {
                         await loadMesh(jobId);
@@ -632,8 +630,18 @@
                     }
                 }
                 
+                // Load point cloud (初期読み込みは設定で制御)
+                if (autoLoad.point_cloud && availableFiles['point_cloud.ply']) {
+                    showLoading('Loading point cloud...');
+                    try {
+                        await loadPointCloud(jobId);
+                    } catch (error) {
+                        console.error('Failed to load point cloud:', error);
+                    }
+                }
+                
                 // Load RFID
-                if (availableFiles['rfid_positions.json']) {
+                if (autoLoad.rfid && availableFiles['rfid_positions.json']) {
                     showLoading('Loading RFID data...');
                     try {
                         await loadRFID(jobId);
@@ -642,8 +650,12 @@
                     }
                 }
                 
-                // Set display mode - メッシュが優先
-                if (mesh) {
+                // Set display mode - yaml設定のdefault_viewを使用、なければメッシュ優先
+                if (defaultView === 'mesh' && mesh) {
+                    setDisplayMode('mesh');
+                } else if (defaultView === 'pointcloud' && pointCloud) {
+                    setDisplayMode('pointcloud');
+                } else if (mesh) {
                     setDisplayMode('mesh');
                 } else if (pointCloud) {
                     setDisplayMode('pointcloud');

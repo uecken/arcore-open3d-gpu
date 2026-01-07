@@ -94,6 +94,16 @@ output:
     simplify_for_viewer: true  # web表示用の簡略化を有効にするか（true/false）
     max_triangles_for_viewer: 500000  # ビューアー表示用の最大三角形数（50万、simplify_for_viewer=trueの場合のみ適用）
 
+# ビューアー設定
+viewer:
+  # 初期表示設定
+  default_view: "mesh"  # 初期表示モード: "mesh" または "pointcloud"
+  # 初期読み込み設定
+  auto_load:
+    point_cloud: false  # 初期読み込み時に点群を読み込むか（false推奨、メモリ節約）
+    mesh: true          # 初期読み込み時にメッシュを読み込むか（true推奨）
+    rfid: true          # 初期読み込み時にRFIDデータを読み込むか
+
 logging:
   level: "INFO"
   file: "/var/log/arcore-open3d/server.log"

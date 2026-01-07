@@ -339,12 +339,25 @@ async def get_scene_info(job_id: str):
                 path = result_dir / filename
                 available_files[filename] = path.exists()
             
+            # ビューアー設定を取得
+            viewer_config = CONFIG.get('viewer', {})
+            auto_load_config = viewer_config.get('auto_load', {})
+            default_view = viewer_config.get('default_view', 'mesh')
+            
             return {
                 "job_id": job_id,
                 "status": "completed",  # 結果ファイルが存在するので完了とみなす
                 "mode": "unknown",
                 "available_files": available_files,
-                "result": {}
+                "result": {},
+                "viewer_config": {
+                    "default_view": default_view,
+                    "auto_load": {
+                        "point_cloud": auto_load_config.get('point_cloud', False),
+                        "mesh": auto_load_config.get('mesh', True),
+                        "rfid": auto_load_config.get('rfid', True)
+                    }
+                }
             }
     
     job = jobs[job_id]
@@ -354,12 +367,25 @@ async def get_scene_info(job_id: str):
         path = result_dir / filename
         available_files[filename] = path.exists()
     
+    # ビューアー設定を取得
+    viewer_config = CONFIG.get('viewer', {})
+    auto_load_config = viewer_config.get('auto_load', {})
+    default_view = viewer_config.get('default_view', 'mesh')
+    
     return {
         "job_id": job_id,
         "status": job.get("status"),
         "mode": job.get("mode"),
         "available_files": available_files,
-        "result": job.get("result", {})
+        "result": job.get("result", {}),
+        "viewer_config": {
+            "default_view": default_view,
+            "auto_load": {
+                "point_cloud": auto_load_config.get('point_cloud', False),
+                "mesh": auto_load_config.get('mesh', True),
+                "rfid": auto_load_config.get('rfid', True)
+            }
+        }
     }
 
 # ============================================================
