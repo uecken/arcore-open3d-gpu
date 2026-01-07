@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-既存データのメッシュを再生成するスクリプト
+既存データのメッシュを再生成するスクリプト（GPU対応版）
 点群からメッシュを再生成し、yaml設定に基づいて品質向上処理を適用します
+GPU対応版のMeshGeneratorを使用して高速処理を実現します
 """
 
 import sys
@@ -19,6 +20,28 @@ def load_config() -> Dict[str, Any]:
         with open(CONFIG_PATH, 'r') as f:
             return yaml.safe_load(f)
     return {}
+
+def check_gpu_availability(gpu_config: Dict[str, Any]) -> bool:
+    """GPUが利用可能か確認"""
+    if not gpu_config.get('enabled', True):
+        return False
+    
+    try:
+        import torch
+        if torch.cuda.is_available() and gpu_config.get('use_cuda', True):
+            device_id = gpu_config.get('device_id', 0)
+            gpu_name = torch.cuda.get_device_name(device_id)
+            print(f"✓ GPU available: {gpu_name} (Device {device_id})")
+            return True
+        else:
+            print("⚠ GPU not available (CUDA not available)")
+            return False
+    except ImportError:
+        print("⚠ GPU not available (PyTorch not installed)")
+        return False
+    except Exception as e:
+        print(f"⚠ GPU check error: {e}")
+        return False
 
 def improve_mesh_quality(mesh: o3d.geometry.TriangleMesh, config: Dict[str, Any], job_id: str = "") -> o3d.geometry.TriangleMesh:
     """メッシュの品質向上処理（main.pyと同じ処理）"""
@@ -87,15 +110,39 @@ def regenerate_mesh_from_pointcloud(job_id: str, config: Dict[str, Any] = None):
     
     print(f"Point cloud: {len(pcd.points)} points")
     
-    # メッシュ生成
-    from pipeline.mesh_generation_gpu import MeshGeneratorGPU
-    
-    mesh_config = config.get('mesh', {})
+    # GPU設定の確認
     gpu_config = config.get('gpu', {})
+    gpu_available = check_gpu_availability(gpu_config)
     
-    print(f"Generating mesh from point cloud...")
-    mesh_gen = MeshGeneratorGPU(mesh_config, gpu_config)
-    mesh = mesh_gen.generate(pcd)
+    # メッシュ生成（GPU対応版を優先的に使用）
+    mesh_config = config.get('mesh', {})
+    
+    if gpu_available:
+        try:
+            from pipeline.mesh_generation_gpu import MeshGeneratorGPU
+            print(f"Generating mesh from point cloud (GPU accelerated)...")
+            mesh_gen = MeshGeneratorGPU(mesh_config, gpu_config)
+            if mesh_gen.use_gpu:
+                print(f"  Using GPU device: {mesh_gen.o3d_device}")
+            else:
+                print(f"  GPU initialization failed, using CPU")
+            mesh = mesh_gen.generate(pcd)
+        except ImportError:
+            print("⚠ GPU pipeline not available, falling back to CPU")
+            from pipeline.mesh_generation import MeshGenerator
+            mesh_gen = MeshGenerator(mesh_config)
+            mesh = mesh_gen.generate(pcd)
+        except Exception as e:
+            print(f"⚠ GPU mesh generation error: {e}, falling back to CPU")
+            from pipeline.mesh_generation import MeshGenerator
+            mesh_gen = MeshGenerator(mesh_config)
+            mesh = mesh_gen.generate(pcd)
+    else:
+        # CPU版を使用
+        from pipeline.mesh_generation import MeshGenerator
+        print(f"Generating mesh from point cloud (CPU)...")
+        mesh_gen = MeshGenerator(mesh_config)
+        mesh = mesh_gen.generate(pcd)
     
     if mesh is None or len(mesh.vertices) == 0 or len(mesh.triangles) == 0:
         print("Error: Mesh generation failed!")
@@ -236,12 +283,26 @@ if __name__ == "__main__":
         print("  mode: 'pointcloud' (from point cloud) or 'existing' (from existing mesh)")
         print("Example: python regenerate_mesh.py 1611626e pointcloud")
         print("Example: python regenerate_mesh.py 1611626e existing")
+        print("")
+        print("GPU対応版: yaml設定のgpu.enabled=trueでGPU加速が有効になります")
         sys.exit(1)
     
     job_id = sys.argv[1]
     mode = sys.argv[2] if len(sys.argv) > 2 else "existing"
     
     config = load_config()
+    
+    # GPU設定の確認と表示
+    gpu_config = config.get('gpu', {})
+    if gpu_config.get('enabled', True):
+        print("=" * 60)
+        print("GPU対応版 メッシュ再生成スクリプト")
+        print("=" * 60)
+        check_gpu_availability(gpu_config)
+        print("")
+    else:
+        print("GPU is disabled in config.yaml, using CPU")
+        print("")
     
     if mode == "pointcloud":
         success = regenerate_mesh_from_pointcloud(job_id, config)
