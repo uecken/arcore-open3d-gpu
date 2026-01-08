@@ -10,10 +10,10 @@ processing:
   default_mode: "rgbd"
   
   tsdf:
-    # 診断結果に基づく推奨値（有効深度ピクセルが0.4%と非常に少ない場合）
-    # ノイズを飲み込ませるために粗く設定
-    voxel_length: 0.04         # 40mm解像度（0.01 → 0.04mに変更、ノイズを飲み込ませる）
-    sdf_trunc: 0.32            # 8倍（voxel_lengthの8倍程度: 0.04 * 8 = 0.32）
+    # メッシュの粗さを改善するため、解像度を少し細かく設定
+    # バランス: ノイズを飲み込ませつつ、詳細を保持（0.04 → 0.03）
+    voxel_length: 0.03         # 30mm解像度（0.04 → 0.03、より細かい解像度で詳細を保持）
+    sdf_trunc: 0.24            # 8倍（voxel_lengthの8倍程度: 0.03 * 8 = 0.24）
     color_type: "RGB8"
   
   depth:
@@ -26,8 +26,8 @@ processing:
     filter_noise: true         # 統計的外れ値除去を有効化
     bilateral_filter: true     # エッジ保持平滑化を有効化
     bilateral_d: 5
-    bilateral_sigma_color: 50.0
-    bilateral_sigma_space: 50.0
+    bilateral_sigma_color: 75.0  # 50.0 → 75.0（より強く平滑化、メッシュ品質向上）
+    bilateral_sigma_space: 75.0  # 50.0 → 75.0（より強く平滑化、メッシュ品質向上）
   
   pointcloud:
     voxel_down_size: 0.01     # 5mm（より高解像度）
@@ -53,12 +53,12 @@ mesh:
     # 密度フィルタリングの調整
     density_threshold_percentile: 5  # 下位5%を除去（より厳しく）
   
-  # メッシュ平滑化
+  # メッシュ平滑化（粗さ改善のため強化）
   smoothing:
     enable: true
     method: "laplacian"        # laplacian or taubin
-    iterations: 5
-    lambda_filter: 0.5
+    iterations: 8              # 5 → 8に増やしてより滑らかに
+    lambda_filter: 0.4         # 0.5 → 0.4に減らしてより強く平滑化
   
   # メッシュ最適化
   optimization:
@@ -70,13 +70,13 @@ mesh:
   # メッシュ品質向上（表示品質改善）
   quality_improvement:
     enable: true
-    # メッシュ細分化（Subdivision）- 滑らかな表面を実現
+    # メッシュ細分化（Subdivision）- 滑らかな表面を実現（粗さ改善のため強化）
     subdivision:
       enable: true
       method: "loop"            # loop or midpoint
-      iterations: 1             # 細分化の反復回数（1推奨、多すぎるとメモリ使用量が増加）
-      max_iterations: 1        # 最大反復回数（メモリ保護のため、デフォルト1）
-      max_triangles: 3000000    # この三角形数以上は細分化をスキップ（メモリ保護）
+      iterations: 1             # 細分化の反復回数（メモリ制約を考慮し1のまま、必要に応じて2に変更可能）
+      max_iterations: 2        # 最大反復回数（1 → 2に変更、メモリが許す場合に2回実行可能）
+      max_triangles: 5000000    # この三角形数以上は細分化をスキップ（3000000 → 5000000に増やす）
     # 法線の改善
     normal_improvement:
       enable: true
