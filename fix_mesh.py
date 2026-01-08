@@ -129,3 +129,25 @@ if __name__ == "__main__":
     
     success = fix_mesh(job_id, max_triangles)
     sys.exit(0 if success else 1)
+
+        print("Usage: python fix_mesh.py <job_id> [max_triangles]")
+        print("Example: python fix_mesh.py 1611626e 500000")
+        print("Note: Use regenerate_mesh.py for full regeneration with yaml settings")
+        sys.exit(1)
+    
+    job_id = sys.argv[1]
+    max_triangles = int(sys.argv[2]) if len(sys.argv) > 2 else None
+    
+    success = fix_mesh(job_id, max_triangles)
+    sys.exit(0 if success else 1)
+
+        print("Usage: python fix_mesh.py <job_id> [max_triangles]")
+        print("Example: python fix_mesh.py 1611626e 500000")
+        print("Note: Use regenerate_mesh.py for full regeneration with yaml settings")
+        sys.exit(1)
+    
+    job_id = sys.argv[1]
+    max_triangles = int(sys.argv[2]) if len(sys.argv) > 2 else None
+    
+    success = fix_mesh(job_id, max_triangles)
+    sys.exit(0 if success else 1)

@@ -326,3 +326,13 @@ if __name__ == "__main__":
     
     cv2.imshow("Depth", depth_colored)
     cv2.waitKey(0)
+
+    depth_colored = cv2.applyColorMap(depth_vis, cv2.COLORMAP_INFERNO)
+    
+    cv2.imshow("Depth", depth_colored)
+    cv2.waitKey(0)
+
+    depth_colored = cv2.applyColorMap(depth_vis, cv2.COLORMAP_INFERNO)
+    
+    cv2.imshow("Depth", depth_colored)
+    cv2.waitKey(0)

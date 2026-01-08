@@ -880,3 +880,4 @@ class COLMAPMVSPipeline:
             print(f"Error generating mesh: {e}")
             import traceback
             traceback.print_exc()
+            return pcd, None
