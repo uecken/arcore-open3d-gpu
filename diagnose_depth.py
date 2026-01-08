@@ -7,6 +7,7 @@ Depthデータの診断スクリプト
 import sys
 import numpy as np
 import cv2
+import struct
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import json
@@ -57,28 +58,51 @@ def check_depth_file(depth_path: Path, depth_scale: float = 1000.0) -> Dict:
     try:
         if is_raw:
             # ARCoreの.raw形式を読み込み
-            depth_data = np.fromfile(str(depth_path), dtype=np.uint16)
-            
-            # メタデータからサイズを取得（試行錯誤で推測するか、別ファイルから取得）
-            # 一般的なサイズ: 640x480, 1280x720 など
-            possible_sizes = [
-                (640, 480),
-                (1280, 720),
-                (320, 240),
-                (256, 192)
-            ]
-            
-            depth_image = None
-            for w, h in possible_sizes:
-                if len(depth_data) == w * h:
-                    depth_image = depth_data.reshape(h, w)
-                    result["width"] = w
-                    result["height"] = h
-                    break
-            
-            if depth_image is None:
-                result["issues"].append(f"Unknown raw format. Data size: {len(depth_data)} pixels")
-                return result
+            # フォーマット: 4 bytes (width, Big Endian int) + 4 bytes (height, Big Endian int) + depth data (Big Endian uint16)
+            with open(depth_path, 'rb') as f:
+                # ヘッダー読み込み（Big Endian int）
+                try:
+                    width_bytes = f.read(4)
+                    height_bytes = f.read(4)
+                    if len(width_bytes) < 4 or len(height_bytes) < 4:
+                        result["issues"].append("Raw file too small for header")
+                        return result
+                    
+                    width = struct.unpack('>i', width_bytes)[0]  # Big Endian int
+                    height = struct.unpack('>i', height_bytes)[0]  # Big Endian int
+                    
+                    result["width"] = width
+                    result["height"] = height
+                    
+                    # 残りのデータを読み込み（Big Endian uint16）
+                    raw_data = f.read()
+                    depth_array = np.frombuffer(raw_data, dtype='>u2')  # Big Endian uint16
+                    
+                    # サイズを確認
+                    expected_pixels = width * height
+                    if len(depth_array) >= expected_pixels:
+                        depth_array = depth_array[:expected_pixels].reshape((height, width))
+                        depth_image = depth_array
+                    else:
+                        # データが不完全でも可能な限り処理
+                        if len(depth_array) > 0:
+                            # 不完全なデータでも処理を続行
+                            actual_h = len(depth_array) // width
+                            if actual_h > 0:
+                                depth_array = depth_array[:actual_h * width].reshape((actual_h, width))
+                                depth_image = depth_array
+                                result["height"] = actual_h
+                                result["issues"].append(f"Incomplete data: expected {expected_pixels} pixels, got {len(depth_array)}")
+                            else:
+                                result["issues"].append(f"Incomplete data: expected {expected_pixels} pixels, got {len(depth_array)}")
+                                return result
+                        else:
+                            result["issues"].append(f"No depth data found")
+                            return result
+                        
+                except (struct.error, ValueError) as e:
+                    result["issues"].append(f"Failed to parse raw file: {e}")
+                    return result
         else:
             # 通常の画像形式（PNG, JPGなど）
             depth_image = cv2.imread(str(depth_path), cv2.IMREAD_ANYDEPTH)
@@ -100,13 +124,29 @@ def check_depth_file(depth_path: Path, depth_scale: float = 1000.0) -> Dict:
         else:
             depth_m = depth_image.astype(np.float32)
         
-        # 統計情報
-        valid_mask = (depth_m > 0) & np.isfinite(depth_m)
+        # 無効値を検出（ARCore Depthの無効値マーカー）
+        # 16bit unsigned integerの最大値（65535）やその近くの値は無効値として扱う
+        INVALID_DEPTH_THRESHOLD_MM = 65000  # 65m以上は無効値とみなす
+        INVALID_DEPTH_THRESHOLD_M = INVALID_DEPTH_THRESHOLD_MM / depth_scale
+        
+        # 生のuint16値で無効値をチェック（変換前）
+        if depth_image.dtype == np.uint16:
+            invalid_mask_raw = depth_image >= INVALID_DEPTH_THRESHOLD_MM
+            invalid_pixels_count = int(np.sum(invalid_mask_raw))
+        else:
+            invalid_mask_raw = depth_m >= INVALID_DEPTH_THRESHOLD_M
+            invalid_pixels_count = int(np.sum(invalid_mask_raw))
+        
+        # 統計情報（無効値を除外）
+        # 有効な深度値: 0より大きく、無効値マーカーより小さく、有限値
+        valid_mask = (depth_m > 0) & (depth_m < INVALID_DEPTH_THRESHOLD_M) & np.isfinite(depth_m)
         result["valid_pixels"] = int(np.sum(valid_mask))
         result["zero_pixels"] = int(np.sum(depth_m == 0))
         result["nan_pixels"] = int(np.sum(np.isnan(depth_m)))
         result["inf_pixels"] = int(np.sum(np.isinf(depth_m)))
+        result["invalid_marker_pixels"] = invalid_pixels_count  # 無効値マーカー
         result["valid_ratio"] = float(result["valid_pixels"] / depth_m.size) if depth_m.size > 0 else 0.0
+        result["invalid_ratio"] = float(invalid_pixels_count / depth_m.size) if depth_m.size > 0 else 0.0
         
         if result["valid_pixels"] > 0:
             valid_depths = depth_m[valid_mask]
@@ -115,10 +155,17 @@ def check_depth_file(depth_path: Path, depth_scale: float = 1000.0) -> Dict:
             result["mean"] = float(np.mean(valid_depths))
             result["std"] = float(np.std(valid_depths))
             result["depth_range_m"] = (result["min"], result["max"])
+            
+            # パーセンタイルを計算（外れ値の影響を減らす）
+            result["percentile_95"] = float(np.percentile(valid_depths, 95))
+            result["percentile_99"] = float(np.percentile(valid_depths, 99))
         else:
             result["issues"].append("No valid depth pixels found")
         
         # 問題チェック
+        if result["invalid_ratio"] > 0.1:
+            result["issues"].append(f"Many invalid depth markers ({result['invalid_ratio']*100:.1f}% = {result['invalid_marker_pixels']} pixels, max_depth should be truncated to <{INVALID_DEPTH_THRESHOLD_M:.1f}m)")
+        
         if result["valid_ratio"] < 0.1:
             result["issues"].append(f"Very few valid pixels ({result['valid_ratio']*100:.1f}%)")
         elif result["valid_ratio"] < 0.5:
@@ -127,7 +174,10 @@ def check_depth_file(depth_path: Path, depth_scale: float = 1000.0) -> Dict:
         if result["std"] is not None and result["std"] > 2.0:
             result["issues"].append(f"High depth variance (std={result['std']:.2f}m, possibly noisy)")
         
-        if result["max"] is not None and result["max"] > 10.0:
+        # 99パーセンタイルを使用して外れ値を考慮した最大値をチェック
+        if result.get("percentile_99") is not None and result["percentile_99"] > 10.0:
+            result["issues"].append(f"Very large depth values (99th percentile={result['percentile_99']:.2f}m, consider truncating)")
+        elif result["max"] is not None and result["max"] > 10.0:
             result["issues"].append(f"Very large depth values (max={result['max']:.2f}m)")
         
         if result["nan_pixels"] > 0:
@@ -216,12 +266,18 @@ def diagnose_job(job_id: str, data_dir: Path = Path("/opt/arcore-open3d-gpu/data
         if check_result["readable"]:
             print(f"      Size: {check_result['width']}x{check_result['height']}")
             print(f"      Valid pixels: {check_result['valid_ratio']*100:.1f}%")
+            if check_result.get("invalid_ratio", 0) > 0:
+                print(f"      Invalid markers: {check_result['invalid_ratio']*100:.1f}% ({check_result.get('invalid_marker_pixels', 0)} pixels)")
             if check_result["depth_range_m"]:
                 print(f"      Depth range: {check_result['depth_range_m'][0]:.2f}m - {check_result['depth_range_m'][1]:.2f}m")
+                if check_result.get("percentile_99"):
+                    print(f"      99th percentile: {check_result['percentile_99']:.2f}m (recommended max)")
             if check_result["std"] is not None:
                 print(f"      Std dev: {check_result['std']:.3f}m")
             if check_result["issues"]:
-                print(f"      ⚠ Issues: {', '.join(check_result['issues'])}")
+                print(f"      ⚠ Issues:")
+                for issue in check_result["issues"]:
+                    print(f"         - {issue}")
         else:
             print(f"      ❌ Failed to read")
             if check_result["issues"]:
@@ -240,13 +296,26 @@ def diagnose_job(job_id: str, data_dir: Path = Path("/opt/arcore-open3d-gpu/data
             print(f"   ⚠ Low valid pixel ratio - depth data may be incomplete")
     
     depth_ranges = [c["depth_range_m"] for c in depth_checks if c["readable"] and c["depth_range_m"]]
+    invalid_ratios = [c.get("invalid_ratio", 0) for c in depth_checks if c["readable"]]
+    percentile_99s = [c.get("percentile_99") for c in depth_checks if c["readable"] and c.get("percentile_99") is not None]
+    
     if depth_ranges:
         min_depths = [r[0] for r in depth_ranges]
         max_depths = [r[1] for r in depth_ranges]
-        print(f"   Depth range: {np.min(min_depths):.2f}m - {np.max(max_depths):.2f}m")
+        print(f"   Depth range (valid only): {np.min(min_depths):.2f}m - {np.max(max_depths):.2f}m")
         
-        if np.max(max_depths) > 10.0:
-            print(f"   ⚠ Very large depth values detected - may indicate noise")
+        if percentile_99s:
+            avg_percentile_99 = np.mean(percentile_99s)
+            print(f"   99th percentile (recommended max): {avg_percentile_99:.2f}m")
+            if avg_percentile_99 > 10.0:
+                print(f"   ⚠ Large depth values detected - consider truncating to {avg_percentile_99:.1f}m")
+        
+        if invalid_ratios:
+            avg_invalid_ratio = np.mean(invalid_ratios)
+            if avg_invalid_ratio > 0:
+                print(f"   Invalid depth markers: {avg_invalid_ratio*100:.1f}% (excluded from statistics)")
+                print(f"   → These are ARCore's invalid value markers (65535 or similar)")
+                print(f"   → Configure depth_trunc < {65.0:.1f}m to filter them out")
     
     std_devs = [c["std"] for c in depth_checks if c["readable"] and c["std"] is not None]
     if std_devs:
