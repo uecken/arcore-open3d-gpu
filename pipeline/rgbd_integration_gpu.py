@@ -655,13 +655,17 @@ class RGBDIntegrationGPU:
                     # カラー画像から深度を推定（GPU）
                     color_img = cv2.imread(str(frame.image_path))
                     if color_img is not None:
+                        # MiDaSの深度推定: scaleはメートル単位への変換係数
+                        # 部屋スキャンの場合、scale=10.0で0.2m-10mの範囲をカバー
+                        midas_scale = 10.0  # depth_scale(1000.0)ではなく、MiDaS用のスケール
                         depth_map = depth_estimator.estimate_depth_metric(
                             color_img,
-                            scale=self.depth_scale,
+                            scale=midas_scale,
                             shift=0.0
                         )
-                        # 深度マップをuint16形式に変換
-                        depth_map_uint16 = (depth_map * self.depth_scale).astype(np.uint16)
+                        # 深度マップをuint16形式に変換（メートル→ミリメートル）
+                        # depth_mapはメートル単位なので、1000倍でミリメートルに変換
+                        depth_map_uint16 = (depth_map * 1000.0).astype(np.uint16)
                         depth_img = o3d.geometry.Image(depth_map_uint16)
                         color = o3d.io.read_image(str(frame.image_path))
                         success = self.integrate_frame_with_images(color, depth_img, pose_matrix)
