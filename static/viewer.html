@@ -296,7 +296,6 @@
             <button id="btn-pointcloud" class="view-btn active" disabled>Point Cloud</button>
             <button id="btn-mesh" class="view-btn" disabled>Mesh</button>
             <button id="btn-rfid" class="view-btn" disabled>RFID</button>
-            <button id="btn-trajectory" class="view-btn" disabled>Trajectory</button>
         </div>
         
         <div class="stats">
@@ -311,10 +310,6 @@
             <div class="stat">
                 <span class="stat-value" id="rfid-count">0</span>
                 <span class="stat-label">RFIDs</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="trajectory-count">0</span>
-                <span class="stat-label">Poses</span>
             </div>
         </div>
     </header>
@@ -611,90 +606,59 @@
                 document.getElementById('info-depth-source').textContent = depthSource;
                 
                 // Update buttons
-                document.getElementById('btn-pointcloud').disabled = !availableFiles['point_cloud.ply'] && !availableFiles['point_cloud_simplified.ply'];
-                document.getElementById('btn-mesh').disabled = !availableFiles['mesh.ply'] && !availableFiles['mesh_simplified.ply'];
+                document.getElementById('btn-pointcloud').disabled = !availableFiles['point_cloud.ply'];
+                document.getElementById('btn-mesh').disabled = !availableFiles['mesh.ply'];
                 document.getElementById('btn-rfid').disabled = !availableFiles['rfid_positions.json'];
                 
-                // Load point cloud (simplified version if available)
-                const pointCloudFile = availableFiles['point_cloud_simplified.ply'] ? 'point_cloud_simplified.ply' : 
-                                      availableFiles['point_cloud.ply'] ? 'point_cloud.ply' : null;
+                // ビューアー設定を取得（yaml設定）
+                const viewerConfig = info.viewer_config || {};
+                const autoLoad = viewerConfig.auto_load || {
+                    point_cloud: false,
+                    mesh: true,
+                    rfid: true
+                };
+                const defaultView = viewerConfig.default_view || 'mesh';
                 
-                if (pointCloudFile) {
+                // Load mesh first (優先)
+                if (autoLoad.mesh && availableFiles['mesh.ply']) {
+                    showLoading('Loading mesh...');
                     try {
-                        await loadPointCloud(jobId, pointCloudFile);
+                        await loadMesh(jobId);
                     } catch (error) {
-                        console.error('Failed to load point cloud:', error);
-                        const errorMsg = error.message || 'Unknown error';
-                        if (errorMsg.includes('timeout') || errorMsg.includes('too large')) {
-                            showLoading('Point cloud is too large. Please try loading the mesh instead.');
-                        } else {
-                            showLoading('Failed to load point cloud. Trying mesh...');
-                        }
-                        // メモリクリーンアップ
-                        if (pointCloud) {
-                            scene.remove(pointCloud);
-                            pointCloud.geometry?.dispose();
-                            pointCloud.material?.dispose();
-                            pointCloud = null;
-                        }
+                        console.error('Failed to load mesh:', error);
+                        showLoading('Failed to load mesh');
                     }
                 }
                 
-                // Load mesh (simplified version if available, only if point cloud failed or not available)
-                const meshFile = availableFiles['mesh_simplified.ply'] ? 'mesh_simplified.ply' : 
-                                 availableFiles['mesh.ply'] ? 'mesh.ply' : null;
-                
-                if (meshFile) {
-                    // 点群がロードできなかった場合のみメッシュを試す
-                    if (!pointCloud) {
-                        showLoading('Loading mesh...');
-                        try {
-                            await loadMesh(jobId, meshFile);
-                        } catch (error) {
-                            console.error('Failed to load mesh:', error);
-                            const errorMsg = error.message || 'Unknown error';
-                            if (errorMsg.includes('timeout') || errorMsg.includes('too large') || errorMsg.includes('memory')) {
-                                showLoading('Mesh is too large to load in browser. Please download the file directly.');
-                            } else {
-                                showLoading('Failed to load mesh');
-                            }
-                            // メモリクリーンアップ
-                            if (mesh) {
-                                scene.remove(mesh);
-                                mesh.geometry?.dispose();
-                                mesh.material?.dispose();
-                                mesh = null;
-                            }
-                        }
-                    } else {
-                        // 点群がロードできた場合は、メッシュはオプションとして後でロード可能にする
-                        console.log('Point cloud loaded successfully, skipping mesh to save memory');
+                // Load point cloud (初期読み込みは設定で制御)
+                if (autoLoad.point_cloud && availableFiles['point_cloud.ply']) {
+                    showLoading('Loading point cloud...');
+                    try {
+                        await loadPointCloud(jobId);
+                    } catch (error) {
+                        console.error('Failed to load point cloud:', error);
                     }
                 }
                 
                 // Load RFID
-                if (availableFiles['rfid_positions.json']) {
+                if (autoLoad.rfid && availableFiles['rfid_positions.json']) {
                     showLoading('Loading RFID data...');
                     try {
                         await loadRFID(jobId);
                     } catch (error) {
                         console.error('Failed to load RFID:', error);
                     }
-                    
-                    // Load Trajectory
-                    showLoading('Loading trajectory data...');
-                    try {
-                        await loadTrajectory(jobId);
-                    } catch (error) {
-                        console.error('Failed to load trajectory:', error);
-                    }
                 }
                 
-                // Set display mode
-                if (pointCloud) {
+                // Set display mode - yaml設定のdefault_viewを使用、なければメッシュ優先
+                if (defaultView === 'mesh' && mesh) {
+                    setDisplayMode('mesh');
+                } else if (defaultView === 'pointcloud' && pointCloud) {
                     setDisplayMode('pointcloud');
                 } else if (mesh) {
                     setDisplayMode('mesh');
+                } else if (pointCloud) {
+                    setDisplayMode('pointcloud');
                 }
                 
             } catch (error) {
@@ -734,61 +698,19 @@
         // ============================================================
         // Load Assets
         // ============================================================
-        async function loadPointCloud(jobId, filename = 'point_cloud.ply') {
+        async function loadPointCloud(jobId) {
             return new Promise((resolve, reject) => {
-                // タイムアウト設定（5分）
-                const timeout = setTimeout(() => {
-                    reject(new Error('Point cloud loading timeout. The file may be too large.'));
-                }, 300000);
-                
                 try {
                     const loader = new THREE.PLYLoader();
-                    const url = `${API_BASE}/scenes/${jobId}/${filename}`;
+                    const url = `${API_BASE}/scenes/${jobId}/point_cloud.ply`;
                     
                     console.log('Loading point cloud from:', url);
-                    showLoading('Loading point cloud (this may take a while for large files)...');
                     
                     loader.load(url,
                         (geometry) => {
                             try {
-                                clearTimeout(timeout);
                                 console.log('Point cloud loaded, processing...');
-                                showLoading('Processing point cloud...');
                                 
-                                // デバッグ: geometryの状態を確認
-                                console.log('Geometry type:', geometry.constructor.name);
-                                console.log('Geometry attributes:', Object.keys(geometry.attributes));
-                                
-                                if (!geometry.attributes.position) {
-                                    console.error('Geometry has no position attribute!');
-                                    console.error('Available attributes:', Object.keys(geometry.attributes));
-                                    throw new Error('Point cloud geometry has no position attribute');
-                                }
-                                
-                                const positions = geometry.attributes.position;
-                                console.log('Position attribute:', {
-                                    count: positions ? positions.count : 'undefined',
-                                    itemSize: positions ? positions.itemSize : 'undefined',
-                                    array: positions ? positions.array : 'undefined',
-                                    arrayLength: positions && positions.array ? positions.array.length : 'undefined'
-                                });
-                                
-                                // メモリ使用量を監視しながら処理
-                                const startMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
-                                
-                                // 大きな点群の場合はダウンサンプリング（表示用）
-                                const originalCount = positions ? positions.count : 0;
-                                const MAX_POINTS = 500000; // 50万点まで（より安全な値）
-                                
-                                console.log(`Point cloud has ${originalCount.toLocaleString()} points`);
-                                
-                                if (originalCount === 0) {
-                                    console.error('Point cloud has 0 points!');
-                                    console.error('Position array:', positions ? positions.array : 'null');
-                                    throw new Error('Point cloud has 0 points. The file may be corrupted or empty.');
-                                }
-                                
-                                // computeBoundingBoxはposition属性があることを前提としている
                                 geometry.computeBoundingBox();
                                 
                                 // Center
@@ -796,92 +718,53 @@
                                 geometry.boundingBox.getCenter(center);
                                 geometry.translate(-center.x, -center.y, -center.z);
                                 
-                                if (originalCount > MAX_POINTS) {
-                                    console.log(`Point cloud too large (${originalCount.toLocaleString()} points), downsampling to ${MAX_POINTS.toLocaleString()}...`);
-                                    showLoading(`Downsampling from ${originalCount.toLocaleString()} to ${MAX_POINTS.toLocaleString()} points...`);
+                                // 大きな点群の場合はダウンサンプリング（表示用）
+                                const positions = geometry.attributes.position;
+                                const MAX_POINTS = 1000000; // 100万点まで
+                                
+                                if (positions.count > MAX_POINTS) {
+                                    console.log(`Point cloud too large (${positions.count} points), downsampling to ${MAX_POINTS}...`);
                                     
-                                    // チャンク処理でメモリ使用量を制限
-                                    const step = Math.ceil(originalCount / MAX_POINTS);
-                                    const targetCount = Math.min(MAX_POINTS, Math.floor(originalCount / step));
-                                    
-                                    // 新しいgeometryを作成（必要なサイズのみ）
-                                    const newPositions = new Float32Array(targetCount * 3);
-                                    const hasColors = geometry.attributes.color !== undefined;
-                                    const newColors = hasColors ? new Float32Array(targetCount * 3) : null;
-                                    
-                                    // チャンク処理でダウンサンプリング
-                                    const CHUNK_SIZE = 50000; // 5万点ずつ処理（メモリ使用量を削減）
-                                    let newIndex = 0;
-                                    
-                                    for (let startIdx = 0; startIdx < originalCount && newIndex < targetCount; startIdx += CHUNK_SIZE) {
-                                        const endIdx = Math.min(startIdx + CHUNK_SIZE, originalCount);
-                                        
-                                        for (let i = startIdx; i < endIdx && newIndex < targetCount; i += step) {
-                                            newPositions[newIndex * 3] = positions.getX(i);
-                                            newPositions[newIndex * 3 + 1] = positions.getY(i);
-                                            newPositions[newIndex * 3 + 2] = positions.getZ(i);
-                                            
-                                            if (newColors && hasColors) {
-                                                const color = geometry.attributes.color;
-                                                newColors[newIndex * 3] = color.getX(i);
-                                                newColors[newIndex * 3 + 1] = color.getY(i);
-                                                newColors[newIndex * 3 + 2] = color.getZ(i);
-                                            }
-                                            
-                                            newIndex++;
-                                        }
-                                        
-                                        // メモリチェック
-                                        if (performance.memory) {
-                                            const currentMemory = performance.memory.usedJSHeapSize;
-                                            if (currentMemory > startMemory * 3) {
-                                                console.warn('High memory usage detected, stopping early');
-                                                break;
-                                            }
-                                        }
-                                        
-                                        // 進捗更新（大きなファイルの場合）
-                                        if (originalCount > 10000000 && startIdx % (CHUNK_SIZE * 10) === 0) {
-                                            const progress = Math.floor((startIdx / originalCount) * 100);
-                                            showLoading(`Downsampling: ${progress}% (${newIndex.toLocaleString()}/${targetCount.toLocaleString()} points)`);
-                                        }
+                                    // 均等にサンプリング
+                                    const step = Math.ceil(positions.count / MAX_POINTS);
+                                    const indices = [];
+                                    for (let i = 0; i < positions.count; i += step) {
+                                        indices.push(i);
                                     }
-                                    
-                                    // 実際に使用したサイズに調整（必要に応じて）
-                                    const finalCount = newIndex;
-                                    
-                                    // 古いgeometryを破棄（メモリ解放）
-                                    geometry.dispose();
                                     
                                     // 新しいgeometryを作成
-                                    geometry = new THREE.BufferGeometry();
+                                    const newPositions = new Float32Array(indices.length * 3);
+                                    const newColors = positions.count > 0 && geometry.attributes.color 
+                                        ? new Float32Array(indices.length * 3) 
+                                        : null;
                                     
-                                    // 実際のサイズに合わせて配列を調整
-                                    if (finalCount < targetCount) {
-                                        const finalPositions = newPositions.slice(0, finalCount * 3);
-                                        geometry.setAttribute('position', new THREE.BufferAttribute(finalPositions, 3));
+                                    for (let i = 0; i < indices.length; i++) {
+                                        const idx = indices[i];
+                                        newPositions[i * 3] = positions.getX(idx);
+                                        newPositions[i * 3 + 1] = positions.getY(idx);
+                                        newPositions[i * 3 + 2] = positions.getZ(idx);
                                         
-                                        if (newColors) {
-                                            const finalColors = newColors.slice(0, finalCount * 3);
-                                            geometry.setAttribute('color', new THREE.BufferAttribute(finalColors, 3));
-                                        }
-                                    } else {
-                                        geometry.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
-                                        if (newColors) {
-                                            geometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
+                                        if (newColors && geometry.attributes.color) {
+                                            const color = geometry.attributes.color;
+                                            newColors[i * 3] = color.getX(idx);
+                                            newColors[i * 3 + 1] = color.getY(idx);
+                                            newColors[i * 3 + 2] = color.getZ(idx);
                                         }
                                     }
                                     
-                                    geometry.computeBoundingBox();
+                                    geometry = new THREE.BufferGeometry();
+                                    geometry.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
+                                    if (newColors) {
+                                        geometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
+                                    }
                                     
-                                    console.log(`Downsampled to ${finalCount.toLocaleString()} points`);
+                                    console.log(`Downsampled to ${indices.length} points`);
                                 }
                                 
                                 // Colors (height-based if no vertex colors)
                                 let colors = geometry.attributes.color;
                                 
                                 if (!colors) {
-                                    showLoading('Generating colors...');
                                     const positions = geometry.attributes.position;
                                     const colorsArray = new Float32Array(positions.count * 3);
                                     const bbox = geometry.boundingBox;
@@ -916,7 +799,6 @@
                                 console.log('Point cloud loaded successfully');
                                 resolve();
                             } catch (error) {
-                                clearTimeout(timeout);
                                 console.error('Error processing point cloud:', error);
                                 reject(error);
                             }
@@ -925,94 +807,33 @@
                             // ローディング進捗
                             if (progress.lengthComputable) {
                                 const percent = (progress.loaded / progress.total) * 100;
-                                showLoading(`Loading point cloud: ${percent.toFixed(1)}%`);
                                 console.log(`Loading point cloud: ${percent.toFixed(1)}%`);
-                            } else {
-                                console.log('Loading point cloud (progress not computable)');
                             }
                         },
                         (error) => {
-                            clearTimeout(timeout);
                             console.error('PLY load error:', error);
-                            console.error('Error details:', {
-                                message: error.message,
-                                stack: error.stack,
-                                type: error.constructor.name
-                            });
-                            reject(new Error(`Failed to load PLY file: ${error.message || 'Unknown error'}`));
+                            reject(error);
                         }
                     );
                 } catch (error) {
-                    clearTimeout(timeout);
                     console.error('Error loading point cloud:', error);
                     reject(error);
                 }
             });
         }
         
-        async function loadMesh(jobId, filename = 'mesh.ply') {
-            return new Promise(async (resolve, reject) => {
-                // タイムアウト設定（3分、メッシュはより短く）
-                const timeout = setTimeout(() => {
-                    reject(new Error('Mesh loading timeout. The file may be too large.'));
-                }, 180000);
-                
+        async function loadMesh(jobId) {
+            return new Promise((resolve, reject) => {
                 try {
-                    const url = `${API_BASE}/scenes/${jobId}/${filename}`;
+                    const loader = new THREE.PLYLoader();
+                    const url = `${API_BASE}/scenes/${jobId}/mesh.ply`;
                     
                     console.log('Loading mesh from:', url);
-                    
-                    // ファイルサイズを事前にチェック
-                    try {
-                        const headResponse = await fetch(url, { method: 'HEAD' });
-                        const contentLength = headResponse.headers.get('content-length');
-                        
-                        if (contentLength) {
-                            const fileSizeMB = parseInt(contentLength) / (1024 * 1024);
-                            console.log(`Mesh file size: ${fileSizeMB.toFixed(2)} MB`);
-                            
-                            // 500MB以上の場合は警告
-                            if (fileSizeMB > 500) {
-                                const shouldContinue = confirm(
-                                    `警告: メッシュファイルが非常に大きいです (${fileSizeMB.toFixed(2)} MB)。\n` +
-                                    `ブラウザがクラッシュする可能性があります。\n\n` +
-                                    `ロードを続行しますか？`
-                                );
-                                
-                                if (!shouldContinue) {
-                                    clearTimeout(timeout);
-                                    reject(new Error('User cancelled mesh loading due to large file size'));
-                                    return;
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('Could not check file size:', e);
-                    }
-                    
-                    showLoading('Loading mesh (this may take a while for large files)...');
-                    
-                    const loader = new THREE.PLYLoader();
                     
                     loader.load(url,
                         (geometry) => {
                             try {
-                                clearTimeout(timeout);
                                 console.log('Mesh loaded, processing...');
-                                showLoading('Processing mesh...');
-                                
-                                // メモリチェック（ロード前）
-                                if (performance.memory) {
-                                    const usedMemory = performance.memory.usedJSHeapSize;
-                                    const limitMemory = performance.memory.jsHeapSizeLimit;
-                                    const memoryPercent = (usedMemory / limitMemory) * 100;
-                                    
-                                    console.log(`Memory usage before processing: ${memoryPercent.toFixed(1)}%`);
-                                    
-                                    if (memoryPercent > 70) {
-                                        throw new Error('Memory usage too high. Please close other tabs and try again.');
-                                    }
-                                }
                                 
                                 geometry.computeVertexNormals();
                                 geometry.computeBoundingBox();
@@ -1022,58 +843,57 @@
                                 geometry.boundingBox.getCenter(center);
                                 geometry.translate(-center.x, -center.y, -center.z);
                                 
-                                // 大きなメッシュの場合は警告
-                                const MAX_TRIANGLES = 10000000; // 1000万三角形まで（実用的な上限）
+                                // メッシュのサイズ確認
                                 const triangleCount = geometry.index ? geometry.index.count / 3 : 0;
+                                console.log(`Mesh loaded: ${triangleCount.toLocaleString()} triangles`);
                                 
-                                console.log(`Mesh has ${triangleCount.toLocaleString()} triangles`);
-                                
-                                if (triangleCount > MAX_TRIANGLES) {
-                                    console.warn(`Mesh too large (${triangleCount.toLocaleString()} triangles), may cause memory issues`);
-                                    showLoading(`Warning: Very large mesh (${triangleCount.toLocaleString()} triangles). Processing...`);
-                                    
-                                    // メモリチェック
-                                    if (performance.memory) {
-                                        const usedMemory = performance.memory.usedJSHeapSize;
-                                        const limitMemory = performance.memory.jsHeapSizeLimit;
-                                        const memoryPercent = (usedMemory / limitMemory) * 100;
-                                        
-                                        if (memoryPercent > 85) {
-                                            geometry.dispose();
-                                            throw new Error('Insufficient memory to process mesh. The mesh is too large for this browser.');
-                                        }
-                                    }
+                                if (triangleCount === 0) {
+                                    console.error('ERROR: Mesh has no triangles!');
+                                    reject(new Error('Mesh has no triangles'));
+                                    return;
                                 }
                                 
-                                const material = new THREE.MeshStandardMaterial({
-                                    color: 0x00c896,
-                                    roughness: 0.6,
-                                    metalness: 0.2,
-                                    flatShading: false,
-                                    side: THREE.DoubleSide
-                                });
+                                // 大きなメッシュの場合は警告
+                                const MAX_TRIANGLES = 1000000; // 100万三角形まで
+                                if (triangleCount > MAX_TRIANGLES) {
+                                    console.warn(`Large mesh detected (${triangleCount.toLocaleString()} triangles). This may cause performance issues.`);
+                                }
+                                
+                                // メッシュに色がある場合はそれを使用、なければデフォルト色
+                                let material;
+                                if (geometry.attributes.color) {
+                                    material = new THREE.MeshStandardMaterial({
+                                        vertexColors: true,
+                                        roughness: 0.6,
+                                        metalness: 0.2,
+                                        flatShading: false,
+                                        side: THREE.DoubleSide
+                                    });
+                                } else {
+                                    material = new THREE.MeshStandardMaterial({
+                                        color: 0x00c896,
+                                        roughness: 0.6,
+                                        metalness: 0.2,
+                                        flatShading: false,
+                                        side: THREE.DoubleSide
+                                    });
+                                }
                                 
                                 mesh = new THREE.Mesh(geometry, material);
-                                mesh.visible = false;
+                                // メッシュは読み込まれたら表示する（デフォルトで表示）
+                                mesh.visible = true;
                                 scene.add(mesh);
                                 
-                                document.getElementById('face-count').textContent = Math.floor(triangleCount).toLocaleString();
+                                const faceCount = geometry.index ? geometry.index.count / 3 : 0;
+                                document.getElementById('face-count').textContent = Math.floor(faceCount).toLocaleString();
+                                
+                                // カメラをメッシュに合わせる
+                                fitCameraToObject(mesh);
                                 
                                 console.log('Mesh loaded successfully');
                                 resolve();
                             } catch (error) {
-                                clearTimeout(timeout);
                                 console.error('Error processing mesh:', error);
-                                
-                                // メモリクリーンアップ
-                                if (geometry) {
-                                    try {
-                                        geometry.dispose();
-                                    } catch (e) {
-                                        console.warn('Error disposing geometry:', e);
-                                    }
-                                }
-                                
                                 reject(error);
                             }
                         },
@@ -1081,32 +901,15 @@
                             // ローディング進捗
                             if (progress.lengthComputable) {
                                 const percent = (progress.loaded / progress.total) * 100;
-                                showLoading(`Loading mesh: ${percent.toFixed(1)}%`);
                                 console.log(`Loading mesh: ${percent.toFixed(1)}%`);
-                                
-                                // メモリチェック（ロード中）
-                                if (performance.memory && percent > 50) {
-                                    const usedMemory = performance.memory.usedJSHeapSize;
-                                    const limitMemory = performance.memory.jsHeapSizeLimit;
-                                    const memoryPercent = (usedMemory / limitMemory) * 100;
-                                    
-                                    if (memoryPercent > 90) {
-                                        console.warn('Memory usage very high during loading, aborting...');
-                                        loader.manager.itemError(url);
-                                        clearTimeout(timeout);
-                                        reject(new Error('Memory usage too high during loading. Please try a smaller mesh.'));
-                                    }
-                                }
                             }
                         },
                         (error) => {
-                            clearTimeout(timeout);
                             console.error('Mesh load error:', error);
                             reject(error);
                         }
                     );
                 } catch (error) {
-                    clearTimeout(timeout);
                     console.error('Error loading mesh:', error);
                     reject(error);
                 }
@@ -1167,82 +970,6 @@
         }
         
         // ============================================================
-        // Trajectory Loading
-        // ============================================================
-        let trajectoryLine = null;
-        let trajectoryMarkers = [];
-        
-        async function loadTrajectory(jobId) {
-            try {
-                const response = await fetch(`${API_BASE}/scenes/${jobId}/trajectory.json`);
-                if (!response.ok) {
-                    console.log('Trajectory data not available');
-                    document.getElementById('trajectory-count').textContent = '0';
-                    return;
-                }
-                
-                const data = await response.json();
-                const poses = data.poses || [];
-                
-                if (poses.length === 0) {
-                    document.getElementById('trajectory-count').textContent = '0';
-                    return;
-                }
-                
-                // Create trajectory line
-                const points = poses.map(pose => new THREE.Vector3(pose.x, pose.y, pose.z));
-                const geometry = new THREE.BufferGeometry().setFromPoints(points);
-                const material = new THREE.LineBasicMaterial({ 
-                    color: 0x00ff00,  // Green color for trajectory
-                    linewidth: 2
-                });
-                trajectoryLine = new THREE.Line(geometry, material);
-                trajectoryLine.visible = false;
-                scene.add(trajectoryLine);
-                
-                // Create start/end markers
-                // Start marker (green sphere)
-                const startGeometry = new THREE.SphereGeometry(0.05, 16, 16);
-                const startMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-                const startMarker = new THREE.Mesh(startGeometry, startMaterial);
-                startMarker.position.copy(points[0]);
-                startMarker.visible = false;
-                scene.add(startMarker);
-                trajectoryMarkers.push(startMarker);
-                
-                // End marker (red sphere)
-                const endGeometry = new THREE.SphereGeometry(0.05, 16, 16);
-                const endMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-                const endMarker = new THREE.Mesh(endGeometry, endMaterial);
-                endMarker.position.copy(points[points.length - 1]);
-                endMarker.visible = false;
-                scene.add(endMarker);
-                trajectoryMarkers.push(endMarker);
-                
-                // Add intermediate markers every N poses
-                const markerInterval = Math.max(1, Math.floor(poses.length / 20));
-                for (let i = markerInterval; i < poses.length - 1; i += markerInterval) {
-                    const markerGeometry = new THREE.SphereGeometry(0.02, 8, 8);
-                    const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-                    const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-                    marker.position.copy(points[i]);
-                    marker.visible = false;
-                    scene.add(marker);
-                    trajectoryMarkers.push(marker);
-                }
-                
-                document.getElementById('trajectory-count').textContent = poses.length.toString();
-                document.getElementById('btn-trajectory').disabled = false;
-                
-                console.log(`Trajectory loaded: ${poses.length} poses`);
-                
-            } catch (error) {
-                console.error('Trajectory load error:', error);
-                document.getElementById('trajectory-count').textContent = '0';
-            }
-        }
-        
-        // ============================================================
         // Display Modes
         // ============================================================
         function setDisplayMode(mode) {
@@ -1253,24 +980,22 @@
             document.getElementById(`btn-${mode}`).classList.add('active');
             
             // Update visibility
-            if (pointCloud) pointCloud.visible = (mode === 'pointcloud');
-            if (mesh) mesh.visible = (mode === 'mesh');
+            if (pointCloud) pointCloud.visible = (mode === 'pointcloud' || mode === 'rfid');
+            if (mesh) mesh.visible = (mode === 'mesh' || mode === 'rfid');
             rfidMarkers.forEach(m => m.visible = (mode === 'rfid'));
-            if (trajectoryLine) trajectoryLine.visible = (mode === 'trajectory');
-            trajectoryMarkers.forEach(m => m.visible = (mode === 'trajectory'));
             
             // Show RFID with other modes if selected
             if (mode === 'rfid') {
                 if (pointCloud) pointCloud.visible = true;
+                if (mesh) mesh.visible = true;
                 rfidMarkers.forEach(m => m.visible = true);
             }
             
-            // Show trajectory with mesh or pointcloud
-            if (mode === 'trajectory') {
-                if (mesh) mesh.visible = true;
-                else if (pointCloud) pointCloud.visible = true;
-                if (trajectoryLine) trajectoryLine.visible = true;
-                trajectoryMarkers.forEach(m => m.visible = true);
+            // メッシュモードの場合はカメラを調整
+            if (mode === 'mesh' && mesh) {
+                fitCameraToObject(mesh);
+            } else if (mode === 'pointcloud' && pointCloud) {
+                fitCameraToObject(pointCloud);
             }
         }
         
@@ -1302,26 +1027,6 @@
         document.getElementById('btn-pointcloud').addEventListener('click', () => setDisplayMode('pointcloud'));
         document.getElementById('btn-mesh').addEventListener('click', () => setDisplayMode('mesh'));
         document.getElementById('btn-rfid').addEventListener('click', () => setDisplayMode('rfid'));
-        document.getElementById('btn-trajectory').addEventListener('click', () => setDisplayMode('trajectory'));
-        
-        // ============================================================
-        // Global Error Handlers
-        // ============================================================
-        window.addEventListener('error', (event) => {
-            console.error('Global error:', event.error);
-            if (event.error && (event.error.message.includes('memory') || event.error.message.includes('allocation'))) {
-                showLoading('Memory error: The point cloud is too large. Please try loading the mesh instead.');
-                setTimeout(() => hideLoading(), 5000);
-            }
-        });
-        
-        window.addEventListener('unhandledrejection', (event) => {
-            console.error('Unhandled promise rejection:', event.reason);
-            if (event.reason && (event.reason.message && (event.reason.message.includes('memory') || event.reason.message.includes('timeout')))) {
-                showLoading('Error: ' + event.reason.message);
-                setTimeout(() => hideLoading(), 5000);
-            }
-        });
         
         // ============================================================
         // Initialize
@@ -1331,4 +1036,6 @@
     </script>
 </body>
 </html>
+
+
 

@@ -613,7 +613,7 @@ class RGBDIntegrationGPU:
         self.set_intrinsics(parser.intrinsics)
         self.create_volume()
         
-        # 深度推定の強制使用（GPU使用のため、業界標準に合わせてMiDaSを使用）
+        # 深度推定の強制使用（GPU使用のため）
         depth_estimator = None
         if force_depth_estimation or not parser.has_depth_data():
             try:
@@ -624,12 +624,7 @@ class RGBDIntegrationGPU:
                     device=depth_config.get('device', 'cuda'),
                     gpu_config=self.gpu_config
                 )
-                if force_depth_estimation:
-                    print(f"✓ MiDaS depth estimation enabled (force_use=true, GPU: {depth_estimator.device})")
-                    print(f"  Model: {depth_config.get('model', 'DPT_Large')}")
-                    print(f"  Using MiDaS instead of ARCore Depth API for higher quality")
-                else:
-                    print(f"✓ Depth estimator initialized (GPU: {depth_estimator.device})")
+                print(f"✓ Depth estimator initialized (GPU: {depth_estimator.device})")
             except Exception as e:
                 print(f"⚠ Failed to initialize depth estimator: {e}")
                 if force_depth_estimation:
@@ -660,24 +655,12 @@ class RGBDIntegrationGPU:
                     # カラー画像から深度を推定（GPU）
                     color_img = cv2.imread(str(frame.image_path))
                     if color_img is not None:
-                        # MiDaS深度推定: 相対深度をメートル単位に変換
-                        # 部屋スキャンでは、壁までの距離（3-5m）をカバーするため、より大きなスケールが必要
-                        # 前回: min=0.16m, max=2.43m → 範囲が狭すぎる（部屋の壁がカバーされていない）
-                        # 改善: スケールを大きくして、0.5m - 8m程度の範囲をカバー
-                        midas_scale = 10.0  # 5.0 → 10.0に変更（部屋全体をカバーするため）
                         depth_map = depth_estimator.estimate_depth_metric(
                             color_img,
-                            scale=midas_scale,
+                            scale=self.depth_scale,
                             shift=0.0
                         )
-                        # 深度値を確認（デバッグ用）
-                        if i == 0:
-                            print(f"  First frame depth stats: min={depth_map.min():.2f}m, max={depth_map.max():.2f}m, mean={depth_map.mean():.2f}m")
-                        if i % 10 == 0 and i > 0:
-                            print(f"  Frame {i}/{total} depth stats: min={depth_map.min():.2f}m, max={depth_map.max():.2f}m, mean={depth_map.mean():.2f}m")
-                        
-                        # 深度マップをuint16形式に変換（ミリメートル単位）
-                        # メートル単位の深度 * 1000 = ミリメートル単位
+                        # 深度マップをuint16形式に変換
                         depth_map_uint16 = (depth_map * self.depth_scale).astype(np.uint16)
                         depth_img = o3d.geometry.Image(depth_map_uint16)
                         color = o3d.io.read_image(str(frame.image_path))
@@ -686,8 +669,6 @@ class RGBDIntegrationGPU:
                         continue
                 except Exception as e:
                     print(f"Depth estimation failed for {frame.image_path}: {e}")
-                    import traceback
-                    traceback.print_exc()
                     continue
             else:
                 # 通常の深度画像を使用
@@ -789,11 +770,6 @@ class RGBDIntegrationGPU:
                         return True
                     except Exception as e:
                         print(f"Tensor API integration failed: {e}, falling back to legacy API")
-                        import traceback
-                        traceback.print_exc()
-                else:
-                    # Tensor APIが利用できない場合は通常のAPIを使用
-                    pass
             
             # 通常のAPIを使用
             rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
@@ -963,4 +939,6 @@ class RGBDIntegrationGPU:
             import traceback
             traceback.print_exc()
             return None
+
+
 

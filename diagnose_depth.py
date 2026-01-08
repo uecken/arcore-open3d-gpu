@@ -399,3 +399,70 @@ def main():
 if __name__ == "__main__":
     main()
 
+        print("   1. ⚠ DEPTH IS NOISY (ARCore estimated depth detected)")
+        print("      → Apply depth preprocessing (bilateral filter, inpainting)")
+        print("      → Use coarser TSDF parameters (voxel_length: 0.03-0.06m)")
+        print("      → Reduce depth_trunc (2.5-4.0m)")
+        print("      → Downsample frames (process 1-2 fps instead of 30fps)")
+    
+    if valid_ratios and np.mean(valid_ratios) < 0.7:
+        print("   2. ⚠ MANY MISSING DEPTH PIXELS")
+        print("      → Apply depth inpainting to fill holes")
+        print("      → Check if depth confidence data is available")
+    
+    if frames_with_depth < frames_with_pose * 0.8:
+        print("   3. ⚠ INCONSISTENT DEPTH AVAILABILITY")
+        print(f"      → Only {frames_with_depth}/{frames_with_pose} frames have depth")
+        print("      → Consider using depth estimation to fill gaps")
+    
+    # 常に表示する推奨
+    print()
+    print("   4. 🔧 TSDF Parameter Adjustments (for noisy depth):")
+    print("      → Increase voxel_length: 0.01 → 0.03-0.06m")
+    print("      → Reduce depth_trunc: 3.0 → 2.5-4.0m")
+    print("      → Enable depth filtering in config.yaml")
+    print()
+    print("   5. 📐 Frame Sampling:")
+    print("      → Process 1-2 fps instead of all frames")
+    print("      → Skip similar consecutive frames")
+    
+    return {
+        "job_id": job_id,
+        "has_depth": has_depth,
+        "total_frames": total_frames,
+        "frames_with_pose": frames_with_pose,
+        "frames_with_depth": frames_with_depth,
+        "depth_checks": depth_checks[:5],  # 最初の5つだけ保存
+        "avg_valid_ratio": float(np.mean(valid_ratios)) if valid_ratios else None,
+        "avg_std_dev": float(np.mean(std_devs)) if std_devs else None,
+        "recommendation": "ADJUST_TSDF_AND_PREPROCESS" if (std_devs and np.mean(std_devs) > 1.5) else "OK"
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Diagnose depth data quality for a job")
+    parser.add_argument("job_id", help="Job ID to diagnose")
+    parser.add_argument("--data-dir", type=Path, default=Path("/opt/arcore-open3d-gpu/data"),
+                       help="Data directory path")
+    parser.add_argument("--output", type=Path, help="Output JSON file for results")
+    
+    args = parser.parse_args()
+    
+    result = diagnose_job(args.job_id, args.data_dir)
+    
+    if args.output:
+        with open(args.output, 'w') as f:
+            json.dump(result, f, indent=2)
+        print(f"\n✓ Results saved to: {args.output}")
+    
+    # エラーコード
+    if "error" in result:
+        sys.exit(1)
+    if not result.get("has_depth", False):
+        sys.exit(2)  # No depth data
+    if result.get("recommendation") == "ADJUST_TSDF_AND_PREPROCESS":
+        sys.exit(0)  # Depth exists but noisy
+
+
+if __name__ == "__main__":
+    main()
