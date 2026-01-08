@@ -151,6 +151,56 @@ class COLMAPMVSPipeline:
             print(f"Error running exhaustive_matcher: {e}")
             return False
     
+    def run_mapper(
+        self,
+        session_dir: Path,
+        colmap_dir: Path,
+        progress_callback: Callable[[int, str], None] = None
+    ) -> bool:
+        """COLMAPのmapperを実行して完全なsparse reconstructionを構築"""
+        if progress_callback:
+            progress_callback(10, "Running COLMAP mapper (SfM)...")
+        
+        images_dir = session_dir / "images"
+        database_path = colmap_dir / "database.db"
+        sparse_dir = colmap_dir / "sparse"
+        sparse_dir.mkdir(parents=True, exist_ok=True)
+        
+        env = os.environ.copy()
+        env["QT_QPA_PLATFORM"] = "offscreen"
+        
+        try:
+            result = subprocess.run([
+                self.colmap_path, "mapper",
+                "--database_path", str(database_path),
+                "--image_path", str(images_dir),
+                "--output_path", str(sparse_dir)
+            ], capture_output=True, text=True, env=env, timeout=7200)
+            
+            if result.returncode != 0:
+                print(f"Error: mapper failed: {result.stderr}")
+                return False
+            
+            # sparse/0が存在するか確認
+            if not (sparse_dir / "0").exists():
+                print("Error: mapper did not create sparse/0")
+                return False
+            
+            # 3D点の数を確認
+            points_file = sparse_dir / "0" / "points3D.bin"
+            if points_file.exists():
+                print(f"✓ COLMAP mapper completed (sparse reconstruction created)")
+            else:
+                print("Warning: No points3D.bin found")
+            
+            return True
+        except subprocess.TimeoutExpired:
+            print("Error: mapper timed out (>2 hours)")
+            return False
+        except Exception as e:
+            print(f"Error running mapper: {e}")
+            return False
+    
     def create_colmap_model_from_arcore_poses(
         self,
         parser: ARCoreDataParser,
