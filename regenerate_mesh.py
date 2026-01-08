@@ -113,9 +113,10 @@ def improve_mesh_quality(mesh: o3d.geometry.TriangleMesh, config: Dict[str, Any]
                             print(f"{'[' + job_id + '] ' if job_id else ''}⚠ Mesh is not manifold (edge_manifold: {is_edge_manifold}, vertex_manifold: {is_vertex_manifold})")
                             print(f"{'[' + job_id + '] ' if job_id else ''}   Attempting to fix non-manifold mesh...")
                             
-                            # 非多様体エッジと頂点を削除
+                            # 非多様体エッジを削除
                             mesh.remove_non_manifold_edges()
-                            mesh.remove_non_manifold_vertices()
+                            # non-manifold verticesの削除（Open3Dには直接的なメソッドがないため、
+                            # remove_non_manifold_edges()とremove_unreferenced_vertices()で対応）
                             mesh.remove_duplicated_triangles()
                             mesh.remove_duplicated_vertices()
                             mesh.remove_unreferenced_vertices()

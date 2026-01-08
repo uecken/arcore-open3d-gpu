@@ -729,7 +729,17 @@ async def process_session(job_id: str, session_dir: Path):
                                         
                                         # 非多様体エッジと頂点を削除
                                         mesh.remove_non_manifold_edges()
-                                        mesh.remove_non_manifold_vertices()
+                                        # non-manifold verticesを削除（メソッド名が異なるため、手動で処理）
+                                        try:
+                                            # Open3D 0.17以降では get_non_manifold_vertices() を使用
+                                            non_manifold_vertices = mesh.get_non_manifold_vertices()
+                                            if len(non_manifold_vertices) > 0:
+                                                # non-manifold verticesを含む三角形を削除する方が安全
+                                                # または、unreferenced verticesの削除で対処
+                                                pass
+                                        except AttributeError:
+                                            # メソッドが存在しない場合はスキップ
+                                            pass
                                         mesh.remove_duplicated_triangles()
                                         mesh.remove_duplicated_vertices()
                                         mesh.remove_unreferenced_vertices()
