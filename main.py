@@ -71,6 +71,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# リクエストのロギング（デバッグ用）
+@app.middleware("http")
+async def log_requests(request, call_next):
+    """リクエストとレスポンスをログに記録"""
+    import time
+    start_time = time.time()
+    
+    # リクエスト情報をログ
+    print(f"Request: {request.method} {request.url.path}")
+    if request.method == "POST" and "/api/v1/sessions/upload" in str(request.url.path):
+        # ファイルアップロードリクエストの場合、詳細をログ
+        print(f"  Content-Type: {request.headers.get('content-type', 'N/A')}")
+        print(f"  Content-Length: {request.headers.get('content-length', 'N/A')}")
+    
+    try:
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        print(f"Response: {response.status_code} (took {process_time:.3f}s)")
+        return response
+    except Exception as e:
+        process_time = time.time() - start_time
+        print(f"Error: {type(e).__name__}: {e} (took {process_time:.3f}s)")
+        raise
+
 # ディレクトリ設定
 server_config = CONFIG.get('server', {})
 DATA_DIR = Path(server_config.get('data_dir', '/opt/arcore-3dmapper-open3d/data'))
@@ -206,64 +230,95 @@ async def upload_session(
     ARCoreセッションデータをアップロード
     """
     job_id = str(uuid.uuid4())[:8]
-    session_dir = SESSIONS_DIR / job_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-    images_dir = session_dir / "images"
-    images_dir.mkdir(exist_ok=True)
     
-    processing_mode = mode if mode in ["rgbd", "pointcloud"] else DEFAULT_MODE
-    
-    # ファイル保存
-    async with aiofiles.open(session_dir / "metadata.json", "wb") as f:
-        await f.write(await metadata.read())
-    async with aiofiles.open(session_dir / "camera_intrinsics.json", "wb") as f:
-        await f.write(await intrinsics.read())
-    async with aiofiles.open(session_dir / "ARCore_sensor_pose.txt", "wb") as f:
-        await f.write(await poses.read())
-    if rfid:
-        async with aiofiles.open(session_dir / "rfid_detections.json", "wb") as f:
-            await f.write(await rfid.read())
-    
-    # 画像保存
-    for img in images:
-        async with aiofiles.open(images_dir / img.filename, "wb") as f:
-            await f.write(await img.read())
-    
-    # Depth保存（存在する場合）
-    has_depth = False
-    if depths:
-        depth_dir = session_dir / "depth"
-        depth_dir.mkdir(exist_ok=True)
-        for depth in depths:
-            async with aiofiles.open(depth_dir / depth.filename, "wb") as f:
-                await f.write(await depth.read())
-        has_depth = True
-    
-    # ジョブ登録
-    jobs[job_id] = {
-        "status": "queued",
-        "progress": 0,
-        "image_count": len(images),
-        "has_depth": has_depth,
-        "mode": processing_mode,
-        "created_at": datetime.now().isoformat(),
-        "current_step": "queued"
-    }
-    
-    # ディスクに保存
-    save_jobs_to_disk()
-    
-    # バックグラウンド処理開始
-    background_tasks.add_task(process_session, job_id, session_dir)
-    
-    return {
-        "job_id": job_id,
-        "status": "queued",
-        "image_count": len(images),
-        "has_depth": has_depth,
-        "mode": processing_mode,
-        "message": f"Processing started. Check status at /api/v1/jobs/{job_id}/status"
-    }
+    try:
+        # 必須パラメータの確認とログ
+        print(f"[{job_id}] Received upload request")
+        print(f"[{job_id}]   metadata: {metadata.filename if metadata else 'None'}")
+        print(f"[{job_id}]   intrinsics: {intrinsics.filename if intrinsics else 'None'}")
+        print(f"[{job_id}]   poses: {poses.filename if poses else 'None'}")
+        print(f"[{job_id}]   images: {len(images) if images else 0}")
+        print(f"[{job_id}]   depths: {len(depths) if depths else 0}")
+        print(f"[{job_id}]   rfid: {rfid.filename if rfid else 'None'}")
+        print(f"[{job_id}]   mode: {mode}")
+        
+        if not metadata:
+            raise HTTPException(status_code=400, detail="metadata is required")
+        if not intrinsics:
+            raise HTTPException(status_code=400, detail="intrinsics is required")
+        if not poses:
+            raise HTTPException(status_code=400, detail="poses is required")
+        if not images or len(images) == 0:
+            raise HTTPException(status_code=400, detail="at least one image is required")
+        
+        session_dir = SESSIONS_DIR / job_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        images_dir = session_dir / "images"
+        images_dir.mkdir(exist_ok=True)
+        
+        processing_mode = mode if mode in ["rgbd", "pointcloud"] else DEFAULT_MODE
+        
+        # ファイル保存
+        async with aiofiles.open(session_dir / "metadata.json", "wb") as f:
+            await f.write(await metadata.read())
+        async with aiofiles.open(session_dir / "camera_intrinsics.json", "wb") as f:
+            await f.write(await intrinsics.read())
+        async with aiofiles.open(session_dir / "ARCore_sensor_pose.txt", "wb") as f:
+            await f.write(await poses.read())
+        if rfid:
+            async with aiofiles.open(session_dir / "rfid_detections.json", "wb") as f:
+                await f.write(await rfid.read())
+        
+        # 画像保存
+        for img in images:
+            async with aiofiles.open(images_dir / img.filename, "wb") as f:
+                await f.write(await img.read())
+        
+        # Depth保存（存在する場合）
+        has_depth = False
+        if depths:
+            depth_dir = session_dir / "depth"
+            depth_dir.mkdir(exist_ok=True)
+            for depth in depths:
+                async with aiofiles.open(depth_dir / depth.filename, "wb") as f:
+                    await f.write(await depth.read())
+            has_depth = True
+        
+        # ジョブ登録
+        jobs[job_id] = {
+            "status": "queued",
+            "progress": 0,
+            "image_count": len(images),
+            "has_depth": has_depth,
+            "mode": processing_mode,
+            "created_at": datetime.now().isoformat(),
+            "current_step": "queued"
+        }
+        
+        # ディスクに保存
+        save_jobs_to_disk()
+        
+        # バックグラウンド処理開始
+        background_tasks.add_task(process_session, job_id, session_dir)
+        
+        print(f"[{job_id}] Upload successful, job queued")
+        
+        return {
+            "job_id": job_id,
+            "status": "queued",
+            "image_count": len(images),
+            "has_depth": has_depth,
+            "mode": processing_mode,
+            "message": f"Processing started. Check status at /api/v1/jobs/{job_id}/status"
+        }
+    except HTTPException:
+        print(f"[{job_id}] HTTPException raised")
+        raise
+    except Exception as e:
+        print(f"[{job_id}] Error in upload_session: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
 
 @app.get("/api/v1/jobs/{job_id}/status")
 async def get_status(job_id: str):
@@ -851,6 +906,19 @@ async def process_session(job_id: str, session_dir: Path):
         jobs[job_id]["progress"] = 100
         jobs[job_id]["current_step"] = "done"
         jobs[job_id]["completed_at"] = datetime.now().isoformat()
+        # Depth sourceの判定
+        depth_source = "Unknown"
+        if use_depth_estimation and force_depth_estimation:
+            depth_source = "MiDaS_DPT_Large"
+        elif use_depth_estimation:
+            depth_source = "MiDaS_DPT_Large"
+        elif parser.has_depth_data():
+            # ARCore Depthの種類を判定（実際のデータから判定するのは困難なため、推定）
+            # ARCore Depthには複数のソースがある: Depth Camera, Motion Stereo, ML-based estimation
+            depth_source = "ARCore_Depth"
+        else:
+            depth_source = "None"
+        
         jobs[job_id]["result"] = {
             "point_cloud_url": f"/scenes/{job_id}/point_cloud.ply",
             "mesh_url": f"/scenes/{job_id}/mesh.ply" if mesh else None,
@@ -860,7 +928,11 @@ async def process_session(job_id: str, session_dir: Path):
             "mesh_info": MeshGenerator.get_mesh_info(mesh) if mesh and len(mesh.vertices) > 0 else None,
             "gpu_accelerated": GPU_AVAILABLE,
             "has_point_cloud": pcd is not None and len(pcd.points) > 0,
-            "has_mesh": mesh is not None and len(mesh.vertices) > 0 and len(mesh.triangles) > 0
+            "has_mesh": mesh is not None and len(mesh.vertices) > 0 and len(mesh.triangles) > 0,
+            "depth_source": depth_source,
+            "has_depth": parser.has_depth_data(),
+            "frames_with_depth": len(parser.get_frames_with_depth()),
+            "total_frames": len(parser.frames)
         }
         
         # ディスクに保存
