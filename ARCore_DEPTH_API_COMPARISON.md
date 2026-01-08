@@ -1,3 +1,8 @@
+---
+作成日時: 2026-01-08 10:18:52
+最終更新: 2026-01-08 10:23:00
+---
+
 # ARCore Depth API比較: Raw Depth API vs Depth API
 
 ## 概要
