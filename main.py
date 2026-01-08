@@ -10,6 +10,8 @@ import json
 import uuid
 import shutil
 import yaml
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -116,6 +118,10 @@ if static_dir.exists():
 
 # ジョブ管理
 jobs: Dict[str, Dict[str, Any]] = {}
+
+# 処理用のスレッドプール（Webサーバーをブロックしないように別スレッドで処理）
+# max_workers=2: 同時に2つのジョブを処理可能
+PROCESSING_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="processing_")
 
 # ジョブデータの永続化
 JOBS_DB_PATH = DATA_DIR / "jobs_db.json"
@@ -447,8 +453,8 @@ async def get_scene_info(job_id: str):
 # 処理パイプライン
 # ============================================================
 
-async def process_session(job_id: str, session_dir: Path):
-    """セッションを処理"""
+def _process_session_sync(job_id: str, session_dir: Path):
+    """セッションを処理（同期版 - 別スレッドで実行される）"""
     try:
         jobs[job_id]["status"] = "processing"
         result_dir = RESULTS_DIR / job_id
@@ -1015,6 +1021,22 @@ async def process_session(job_id: str, session_dir: Path):
         print(f"[{job_id}] ❌ Error: {e}")
         import traceback
         traceback.print_exc()
+
+
+async def process_session(job_id: str, session_dir: Path):
+    """セッションを処理（非同期ラッパー - 別スレッドで実行）
+    
+    重い処理をThreadPoolExecutorで実行することで、
+    Webサーバー（FastAPI）がブロックされずに他のリクエストを処理できる。
+    これにより、処理中でもviewerにアクセス可能になる。
+    """
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        PROCESSING_EXECUTOR,
+        _process_session_sync,
+        job_id,
+        session_dir
+    )
 
 
 def update_job(job_id: str, progress: int, step: str, message: str = ""):
