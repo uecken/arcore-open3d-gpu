@@ -415,6 +415,7 @@
         let currentJobId = null;
         let availableFiles = {};
         let displayMode = 'pointcloud'; // pointcloud, mesh, rfid, trajectory
+        let sceneCenterOffset = new THREE.Vector3(0, 0, 0); // メッシュ/点群の中心オフセット
         
         // ============================================================
         // Initialization
@@ -722,6 +723,9 @@
             document.getElementById('face-count').textContent = '0';
             document.getElementById('rfid-count').textContent = '0';
             document.getElementById('trajectory-count').textContent = '0';
+            
+            // 中心オフセットをリセット
+            sceneCenterOffset.set(0, 0, 0);
         }
         
         // ============================================================
@@ -867,10 +871,12 @@
                                 geometry.computeVertexNormals();
                                 geometry.computeBoundingBox();
                                 
-                                // Center
+                                // Center - オフセットを保存してから中心化
                                 const center = new THREE.Vector3();
                                 geometry.boundingBox.getCenter(center);
+                                sceneCenterOffset.copy(center); // 中心オフセットを保存
                                 geometry.translate(-center.x, -center.y, -center.z);
+                                console.log(`Mesh center offset: (${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)})`);
                                 
                                 // メッシュのサイズ確認
                                 const triangleCount = geometry.index ? geometry.index.count / 3 : 0;
@@ -1010,22 +1016,17 @@
                     return;
                 }
                 
-                // メッシュ/点群の中心を取得して軌跡も同じオフセットを適用
-                let centerOffset = new THREE.Vector3(0, 0, 0);
-                if (mesh && mesh.geometry.boundingBox) {
-                    centerOffset = mesh.geometry.boundingBox.getCenter(new THREE.Vector3());
-                } else if (pointCloud && pointCloud.geometry.boundingBox) {
-                    centerOffset = pointCloud.geometry.boundingBox.getCenter(new THREE.Vector3());
-                }
+                // メッシュ読み込み時に保存した中心オフセットを使用
+                console.log(`Applying trajectory offset: (${sceneCenterOffset.x.toFixed(3)}, ${sceneCenterOffset.y.toFixed(3)}, ${sceneCenterOffset.z.toFixed(3)})`);
                 
                 // 軌跡ラインを作成 (position: {x,y,z} または直接 {x,y,z} の両方に対応)
                 const positions = [];
                 poses.forEach(pose => {
                     const pos = pose.position || pose;
                     positions.push(
-                        pos.x - centerOffset.x,
-                        pos.y - centerOffset.y,
-                        pos.z - centerOffset.z
+                        pos.x - sceneCenterOffset.x,
+                        pos.y - sceneCenterOffset.y,
+                        pos.z - sceneCenterOffset.z
                     );
                 });
                 
@@ -1047,9 +1048,9 @@
                 const startSphere = new THREE.Mesh(startGeom, startMat);
                 const firstPos = poses[0].position || poses[0];
                 startSphere.position.set(
-                    firstPos.x - centerOffset.x,
-                    firstPos.y - centerOffset.y,
-                    firstPos.z - centerOffset.z
+                    firstPos.x - sceneCenterOffset.x,
+                    firstPos.y - sceneCenterOffset.y,
+                    firstPos.z - sceneCenterOffset.z
                 );
                 startSphere.visible = false;
                 scene.add(startSphere);
@@ -1061,9 +1062,9 @@
                 const lastPose = poses[poses.length - 1];
                 const lastPos = lastPose.position || lastPose;
                 endSphere.position.set(
-                    lastPos.x - centerOffset.x,
-                    lastPos.y - centerOffset.y,
-                    lastPos.z - centerOffset.z
+                    lastPos.x - sceneCenterOffset.x,
+                    lastPos.y - sceneCenterOffset.y,
+                    lastPos.z - sceneCenterOffset.z
                 );
                 endSphere.visible = false;
                 scene.add(endSphere);
