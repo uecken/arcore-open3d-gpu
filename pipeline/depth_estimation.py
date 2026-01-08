@@ -187,9 +187,10 @@ class MiDaSDepthEstimator:
         # 例: scale=5.0の場合、相対深度0.2 → 1.0m、相対深度0.1 → 2.0m
         metric_depth = scale * relative_depth + shift
         
-        # 有効範囲にクリップ (0.1m - 10m)
-        # 部屋スキャンでは通常1-10mの範囲が適切
-        metric_depth = np.clip(metric_depth, 0.1, 10.0)
+        # 有効範囲にクリップ (0.2m - 10m)
+        # 部屋スキャンでは通常0.5-8mの範囲が適切
+        # 0.1m → 0.2mに変更（近すぎる深度を除外してノイズを減らす）
+        metric_depth = np.clip(metric_depth, 0.2, 10.0)
         
         return metric_depth.astype(np.float32)
     

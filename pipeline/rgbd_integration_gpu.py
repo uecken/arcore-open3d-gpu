@@ -661,9 +661,10 @@ class RGBDIntegrationGPU:
                     color_img = cv2.imread(str(frame.image_path))
                     if color_img is not None:
                         # MiDaS深度推定: 相対深度をメートル単位に変換
-                        # scaleパラメータで適切なスケールを設定（通常、相対深度に10-50をかけると現実的な範囲になる）
-                        # 部屋スキャンでは、通常1-10mの範囲になるよう調整
-                        midas_scale = 5.0  # 相対深度に5.0をかけてメートル単位に変換（調整可能）
+                        # 部屋スキャンでは、壁までの距離（3-5m）をカバーするため、より大きなスケールが必要
+                        # 前回: min=0.16m, max=2.43m → 範囲が狭すぎる（部屋の壁がカバーされていない）
+                        # 改善: スケールを大きくして、0.5m - 8m程度の範囲をカバー
+                        midas_scale = 10.0  # 5.0 → 10.0に変更（部屋全体をカバーするため）
                         depth_map = depth_estimator.estimate_depth_metric(
                             color_img,
                             scale=midas_scale,
@@ -672,6 +673,8 @@ class RGBDIntegrationGPU:
                         # 深度値を確認（デバッグ用）
                         if i == 0:
                             print(f"  First frame depth stats: min={depth_map.min():.2f}m, max={depth_map.max():.2f}m, mean={depth_map.mean():.2f}m")
+                        if i % 10 == 0 and i > 0:
+                            print(f"  Frame {i}/{total} depth stats: min={depth_map.min():.2f}m, max={depth_map.max():.2f}m, mean={depth_map.mean():.2f}m")
                         
                         # 深度マップをuint16形式に変換（ミリメートル単位）
                         # メートル単位の深度 * 1000 = ミリメートル単位
