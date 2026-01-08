@@ -7,39 +7,31 @@ server:
   results_dir: "/opt/arcore-open3d-gpu/results"
 
 processing:
-  default_mode: "rgbd"  # "rgbd" (安定) or "mvs" (高品質だが低解像度画像では不安定)
+  default_mode: "mvs"  # COLMAP MVSモードで再生成
   
   tsdf:
-    # 部屋認識改善のため、TSDF解像度を調整
-    # MiDaS深度推定ではフレーム間の深度整合性が保証されないため、
-    # より粗い解像度でノイズを減らし、安定した統合を実現
-    voxel_length: 0.04         # 40mm解像度（0.03 → 0.04、ノイズを減らして安定した統合を実現）
-    sdf_trunc: 0.32            # 8倍（voxel_lengthの8倍程度: 0.04 * 8 = 0.32）
+    voxel_length: 0.01  # 10mm (高密度)
+    sdf_trunc: 0.08     # 80mm
     color_type: "RGB8"
   
   depth:
     scale: 1000.0
-    # MiDaS深度推定を使用する場合、部屋全体をカバーするため、より大きな範囲が必要
-    # 部屋の壁までの距離は通常3-5m、大きな部屋では5-8m程度
-    trunc: 10.0                # 7.0 → 10.0mに変更（MiDaS深度推定で部屋全体をカバーするため）
-    min_depth: 0.2             # 0.1 → 0.2mに変更（近すぎる深度を除外してノイズを減らす）
-    # 深度データのフィルタリング（有効ピクセルが少ないため重要）
-    filter_noise: true         # 統計的外れ値除去を有効化
-    bilateral_filter: true     # エッジ保持平滑化を有効化
+    trunc: 10.0
+    min_depth: 0.2
+    filter_noise: true
+    bilateral_filter: true
     bilateral_d: 5
-    bilateral_sigma_color: 100.0  # 75.0 → 100.0（部屋認識改善のため、より強く平滑化）
-    bilateral_sigma_space: 100.0  # 75.0 → 100.0（部屋認識改善のため、より強く平滑化）
+    bilateral_sigma_color: 100.0
+    bilateral_sigma_space: 100.0
   
   pointcloud:
-    voxel_down_size: 0.01     # 5mm（より高解像度）
+    voxel_down_size: 0.01
     remove_outliers: true
-    nb_neighbors: 30           # より多くの近傍点で判定
-    std_ratio: 1.5             # より厳しい外れ値除去
-    # 追加のフィルタリング
+    nb_neighbors: 30
+    std_ratio: 1.5
     radius_outlier_removal: true
     radius: 0.05
     min_neighbors: 10
-    # 平滑化
     smooth: true
     smooth_iterations: 1
 
@@ -47,88 +39,68 @@ mesh:
   method: "poisson"
   
   poisson:
-    depth: 10                  # より高解像度（9→10）
+    depth: 10
     width: 0
     scale: 1.1
     linear_fit: false
-    # 密度フィルタリングの調整
-    density_threshold_percentile: 5  # 下位5%を除去（より厳しく）
+    density_threshold_percentile: 5
   
-  # メッシュ平滑化（部屋認識改善のため強化）
   smoothing:
     enable: true
-    method: "laplacian"        # laplacian or taubin
-    iterations: 10             # 8 → 10に増やしてより滑らかに（部屋の壁面を滑らかに）
-    lambda_filter: 0.3         # 0.4 → 0.3に減らしてより強く平滑化
+    method: "laplacian"
+    iterations: 10
+    lambda_filter: 0.3
   
-  # メッシュ最適化
   optimization:
     enable: true
     remove_duplicates: true
     remove_degenerate: true
     orient_normals: true
   
-  # メッシュ品質向上（表示品質改善）
   quality_improvement:
     enable: true
-    # メッシュ細分化（Subdivision）- 滑らかな表面を実現（部屋認識改善のため強化）
     subdivision:
       enable: true
-      method: "loop"            # loop or midpoint
-      iterations: 2             # 細分化の反復回数（1 → 2、部屋の詳細を保持するため）
-      max_iterations: 2        # 最大反復回数
-      max_triangles: 10000000   # この三角形数以上は細分化をスキップ（5000000 → 10000000、部屋全体に対応）
-    # 法線の改善
+      method: "loop"
+      iterations: 2
+      max_iterations: 2
+      max_triangles: 10000000
     normal_improvement:
       enable: true
-      method: "weighted"        # weighted or simple
-      smooth_normals: true      # 法線の平滑化
-    # 色の補正と強化
+      method: "weighted"
+      smooth_normals: true
     color_enhancement:
       enable: true
-      contrast: 1.1             # コントラスト調整（1.0 = 変更なし、>1.0 = 強化）
-      saturation: 1.1           # 彩度調整（1.0 = 変更なし、>1.0 = 強化）
-      brightness: 1.0           # 明度調整（1.0 = 変更なし）
+      contrast: 1.1
+      saturation: 1.1
+      brightness: 1.0
 
 depth_estimation:
   enable: true
   model: "DPT_Large"
   device: "cuda"
-  # 深度推定の強制使用（Depthデータがあっても再推定して品質向上）
-  force_use: true  # trueにすると、DepthデータがあってもMiDaSで再推定（GPU使用）
-                   # 業界標準に合わせてARCore Depth APIを無視し、MiDaSで高精度な深度推定を行う
-                   # 注意: MVSモードでは使用されない（COLMAPのDense MVSを使用）
+  force_use: false  # ARCore Depthを使用
 
-# COLMAP MVSパイプライン設定
 colmap:
-  path: "colmap"  # COLMAP実行ファイルのパス（デフォルト: "colmap"）
-  # Patch Match Stereo設定（GTX 1660 Ti 6GB用に最適化）
-  patch_match_iterations: 3  # Patch Matchの反復回数（5→3、メモリ節約）
-  fusion_min_num_pixels: 5   # 融合時の最小ピクセル数
-  max_image_size: 2400       # 画像の最大サイズ（1600→2400、特徴点マッチング改善）
-  window_radius: 5           # Patch Matchのウィンドウ半径（小さいほどメモリ節約、デフォルト5）
-  cache_size: 16             # キャッシュサイズGB（デフォルト32→16、6GB GPUでOOM回避）
-  
-  # 距離フィルタリング設定
-  # 1. Patch Match Stereo時: カメラからの深度でフィルタリング
-  # 2. 後処理: 点群の重心からの距離でフィルタリング（外れ値除去）
-  # 遠方の点は誤差が大きいため、適切な最大距離を設定してください
+  path: "colmap"
+  patch_match_iterations: 3
+  fusion_min_num_pixels: 5
+  max_image_size: 2400
+  window_radius: 5
+  cache_size: 16
   distance_filter:
-    enable: true              # 距離フィルタリングを有効にするか
-    min_distance: 0.1         # 最小距離（メートル）- カメラからこれより近い点は除去
-    max_distance: 3.0         # 最大距離（メートル）- カメラからこれより遠い点は除去（暫定3m）
-                              # 後処理ではこの値の2倍（重心から6m）以内の点を保持
+    enable: true
+    min_distance: 0.1
+    max_distance: 3.0
 
 gpu:
   enabled: true
   device_id: 0
   use_cuda: true
-  # CUDA設定
-  cuda_available: true  # CUDAが利用可能かどうか（自動検出も可能）
-  allow_fallback_to_cpu: false  # GPUが利用できない場合にCPUにフォールバックするか
-  # メモリ管理
-  memory_fraction: 0.9  # GPUメモリの使用率（0.0-1.0）
-  allow_growth: true  # メモリを必要に応じて動的に確保
+  cuda_available: true
+  allow_fallback_to_cpu: false
+  memory_fraction: 0.9
+  allow_growth: true
 
 output:
   point_cloud:
@@ -141,19 +113,15 @@ output:
     compute_normals: true
     simplify: false
     target_triangles: 100000
-    # ビューアー表示用の簡略化設定
-    simplify_for_viewer: true  # web表示用の簡略化を有効にするか（true/false）- 大きなメッシュ（1GB以上）は必須
-    max_triangles_for_viewer: 500000  # ビューアー表示用の最大三角形数（50万、simplify_for_viewer=trueの場合のみ適用）
+    simplify_for_viewer: true
+    max_triangles_for_viewer: 500000
 
-# ビューアー設定
 viewer:
-  # 初期表示設定
-  default_view: "mesh"  # 初期表示モード: "mesh" または "pointcloud"
-  # 初期読み込み設定
+  default_view: "mesh"
   auto_load:
-    point_cloud: false  # 初期読み込み時に点群を読み込むか（false推奨、メモリ節約）
-    mesh: true          # 初期読み込み時にメッシュを読み込むか（true推奨）
-    rfid: true          # 初期読み込み時にRFIDデータを読み込むか
+    point_cloud: false
+    mesh: true
+    rfid: true
 
 logging:
   level: "INFO"

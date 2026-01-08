@@ -480,3 +480,51 @@ if __name__ == "__main__":
         success = regenerate_mesh_from_existing(job_id, config)
     
     sys.exit(0 if success else 1)
+
+    job_id = sys.argv[1]
+    mode = sys.argv[2] if len(sys.argv) > 2 else "existing"
+    
+    config = load_config()
+    
+    # GPU設定の確認と表示
+    gpu_config = config.get('gpu', {})
+    if gpu_config.get('enabled', True):
+        print("=" * 60)
+        print("GPU対応版 メッシュ再生成スクリプト")
+        print("=" * 60)
+        check_gpu_availability(gpu_config)
+        print("")
+    else:
+        print("GPU is disabled in config.yaml, using CPU")
+        print("")
+    
+    if mode == "pointcloud":
+        success = regenerate_mesh_from_pointcloud(job_id, config)
+    else:
+        success = regenerate_mesh_from_existing(job_id, config)
+    
+    sys.exit(0 if success else 1)
+
+    job_id = sys.argv[1]
+    mode = sys.argv[2] if len(sys.argv) > 2 else "existing"
+    
+    config = load_config()
+    
+    # GPU設定の確認と表示
+    gpu_config = config.get('gpu', {})
+    if gpu_config.get('enabled', True):
+        print("=" * 60)
+        print("GPU対応版 メッシュ再生成スクリプト")
+        print("=" * 60)
+        check_gpu_availability(gpu_config)
+        print("")
+    else:
+        print("GPU is disabled in config.yaml, using CPU")
+        print("")
+    
+    if mode == "pointcloud":
+        success = regenerate_mesh_from_pointcloud(job_id, config)
+    else:
+        success = regenerate_mesh_from_existing(job_id, config)
+    
+    sys.exit(0 if success else 1)

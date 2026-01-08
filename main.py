@@ -1127,3 +1127,208 @@ if __name__ == "__main__":
     port = server_config.get('port', 8000)
     
     uvicorn.run(app, host=host, port=port)
+
+                                # Saturation adjustment
+                                hsv[:, 1] = np.clip(delta[:, 0] * saturation, 0, 1)
+                                hsv[:, 2] = max_val[:, 0]  # Value
+                                
+                                # 簡易的な彩度調整（より簡単な方法）
+                                gray = np.mean(colors, axis=1, keepdims=True)
+                                colors = gray + (colors - gray) * saturation
+                            
+                            # 明度調整
+                            if brightness != 1.0:
+                                colors = colors * brightness
+                            
+                            colors = np.clip(colors, 0, 1)
+                            mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
+                            print(f"[{job_id}] ✓ Colors enhanced (contrast={contrast}, saturation={saturation}, brightness={brightness})")
+                        except Exception as e:
+                            print(f"[{job_id}] ⚠ Color enhancement error: {e}")
+                
+                # 3. メッシュが大きすぎる場合は簡略化（ビューアー用、設定でON/OFF可能）
+                output_config = CONFIG.get('output', {})
+                mesh_output_config = output_config.get('mesh', {})
+                simplify_for_viewer = mesh_output_config.get('simplify_for_viewer', True)  # デフォルト: true
+                max_triangles = mesh_output_config.get('max_triangles_for_viewer', 1000000)  # 100万三角形まで
+                
+                original_triangles = len(mesh.triangles)
+                mesh_to_save = mesh
+                
+                # 簡略化する前に元のメッシュを保存
+                original_mesh_path = result_dir / "mesh_original.ply"
+                save_original = False
+                
+                if simplify_for_viewer and original_triangles > max_triangles:
+                    print(f"[{job_id}] ⚠ Mesh too large ({original_triangles} triangles), simplifying to {max_triangles} for viewer...")
+                    # 簡略化前に元のメッシュを保存
+                    try:
+                        o3d.io.write_triangle_mesh(str(original_mesh_path), mesh, write_ascii=False, compressed=False)
+                        save_original = True
+                        print(f"[{job_id}] ✓ Saved original mesh (before simplification): {original_triangles} triangles")
+                    except Exception as e:
+                        print(f"[{job_id}] ⚠ Failed to save original mesh: {e}")
+                    
+                    try:
+                        # 簡略化（品質を保ちながら）
+                        mesh_simplified = mesh.simplify_quadric_decimation(max_triangles)
+                        if len(mesh_simplified.triangles) > 0:
+                            # 簡略化後もクリーンアップ
+                            mesh_simplified.remove_duplicated_triangles()
+                            mesh_simplified.remove_duplicated_vertices()
+                            mesh_simplified.remove_non_manifold_edges()
+                            mesh_simplified.compute_vertex_normals()
+                            
+                            mesh_to_save = mesh_simplified
+                            print(f"[{job_id}] ✓ Simplified mesh: {len(mesh_simplified.triangles)} triangles ({original_triangles} -> {len(mesh_simplified.triangles)})")
+                        else:
+                            print(f"[{job_id}] ⚠ Simplification failed, using original mesh")
+                    except Exception as e:
+                        print(f"[{job_id}] ⚠ Simplification error: {e}, using original mesh")
+                elif not simplify_for_viewer:
+                    print(f"[{job_id}] ℹ Viewer simplification is disabled (simplify_for_viewer=false), using original mesh ({original_triangles} triangles)")
+                
+                # メッシュを保存（ASCII形式で保存、Three.jsのPLYLoaderと互換性がある）
+                # 注意: 大きなメッシュの場合はASCII形式でもファイルサイズが大きくなる
+                try:
+                    # まず簡略化されたメッシュをASCII形式で保存
+                    o3d.io.write_triangle_mesh(
+                        str(mesh_path), 
+                        mesh_to_save,
+                        write_ascii=True,
+                        compressed=False
+                    )
+                    mesh_info = MeshGenerator.get_mesh_info(mesh_to_save)
+                    print(f"[{job_id}] ✓ Saved mesh (ASCII): {mesh_info['vertices']} vertices, {mesh_info['triangles']} triangles")
+                except Exception as e:
+                    print(f"[{job_id}] ⚠ ASCII save failed: {e}, trying binary format...")
+                    # ASCII形式で保存できない場合はバイナリ形式で保存
+                    o3d.io.write_triangle_mesh(str(mesh_path), mesh_to_save)
+                    mesh_info = MeshGenerator.get_mesh_info(mesh_to_save)
+                    print(f"[{job_id}] ✓ Saved mesh (Binary): {mesh_info['vertices']} vertices, {mesh_info['triangles']} triangles")
+                    
+            except Exception as e:
+                print(f"[{job_id}] ✗ Error saving mesh: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"[{job_id}] ⚠ No mesh to save (mesh is None or empty)")
+            if mesh is not None:
+                print(f"[{job_id}]   Mesh status: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
+        
+        # RFID位置を保存
+        export_rfid_positions(parser, result_dir)
+        
+        # 完了
+        jobs[job_id]["status"] = "completed"
+        jobs[job_id]["progress"] = 100
+        jobs[job_id]["current_step"] = "done"
+        jobs[job_id]["completed_at"] = datetime.now().isoformat()
+        # Depth sourceの判定
+        depth_source = "Unknown"
+        if use_depth_estimation and force_depth_estimation:
+            depth_source = "MiDaS_DPT_Large"
+        elif use_depth_estimation:
+            depth_source = "MiDaS_DPT_Large"
+        elif parser.has_depth_data():
+            # ARCore Depthの種類を判定（実際のデータから判定するのは困難なため、推定）
+            # ARCore Depthには複数のソースがある: Depth Camera, Motion Stereo, ML-based estimation
+            depth_source = "ARCore_Depth"
+        else:
+            depth_source = "None"
+        
+        jobs[job_id]["result"] = {
+            "point_cloud_url": f"/scenes/{job_id}/point_cloud.ply",
+            "mesh_url": f"/scenes/{job_id}/mesh.ply" if mesh else None,
+            "rfid_positions_url": f"/scenes/{job_id}/rfid_positions.json",
+            "viewer_url": f"/viewer/{job_id}",
+            "point_count": len(pcd.points) if pcd and len(pcd.points) > 0 else 0,
+            "mesh_info": MeshGenerator.get_mesh_info(mesh) if mesh and len(mesh.vertices) > 0 else None,
+            "gpu_accelerated": GPU_AVAILABLE,
+            "has_point_cloud": pcd is not None and len(pcd.points) > 0,
+            "has_mesh": mesh is not None and len(mesh.vertices) > 0 and len(mesh.triangles) > 0,
+            "depth_source": depth_source,
+            "has_depth": parser.has_depth_data(),
+            "frames_with_depth": len(parser.get_frames_with_depth()),
+            "total_frames": len(parser.frames)
+        }
+        
+        # ディスクに保存
+        save_jobs_to_disk()
+        
+        print(f"[{job_id}] ✅ Job completed")
+        
+    except Exception as e:
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["error"] = str(e)
+        jobs[job_id]["failed_at"] = datetime.now().isoformat()
+        
+        # ディスクに保存
+        save_jobs_to_disk()
+        
+        print(f"[{job_id}] ❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+async def process_session(job_id: str, session_dir: Path):
+    """セッションを処理（非同期ラッパー - 別スレッドで実行）
+    
+    重い処理をThreadPoolExecutorで実行することで、
+    Webサーバー（FastAPI）がブロックされずに他のリクエストを処理できる。
+    これにより、処理中でもviewerにアクセス可能になる。
+    """
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        PROCESSING_EXECUTOR,
+        _process_session_sync,
+        job_id,
+        session_dir
+    )
+
+
+def update_job(job_id: str, progress: int, step: str, message: str = ""):
+    """ジョブステータス更新"""
+    jobs[job_id]["progress"] = progress
+    jobs[job_id]["current_step"] = step
+    if message:
+        jobs[job_id]["message"] = message
+
+
+def export_rfid_positions(parser: ARCoreDataParser, result_dir: Path):
+    """RFID位置をエクスポート"""
+    rfid_data = {
+        "detections": [],
+        "unique_tags": parser.get_unique_rfid_tags()
+    }
+    
+    for detection in parser.rfid_detections:
+        d = {
+            "tag_id": detection.tag_id,
+            "timestamp": detection.timestamp,
+            "rssi": detection.rssi
+        }
+        if detection.pose:
+            d["position"] = {
+                "x": detection.pose.tx,
+                "y": detection.pose.ty,
+                "z": detection.pose.tz
+            }
+        rfid_data["detections"].append(d)
+    
+    rfid_path = result_dir / "rfid_positions.json"
+    with open(rfid_path, 'w') as f:
+        json.dump(rfid_data, f, indent=2)
+
+
+# ============================================================
+# エントリーポイント
+# ============================================================
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    host = server_config.get('host', '0.0.0.0')
+    port = server_config.get('port', 8000)
+    
+    uvicorn.run(app, host=host, port=port)
