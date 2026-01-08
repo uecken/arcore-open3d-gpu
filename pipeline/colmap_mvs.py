@@ -432,6 +432,15 @@ class COLMAPMVSPipeline:
         env = os.environ.copy()
         env["QT_QPA_PLATFORM"] = "offscreen"
         
+        # 距離フィルタリング設定を取得（カメラからの距離でフィルタリング）
+        colmap_config = self.config.get('colmap', {})
+        distance_filter = colmap_config.get('distance_filter', {})
+        depth_min = distance_filter.get('min_distance', -1)  # -1 = 無効
+        depth_max = distance_filter.get('max_distance', -1)  # -1 = 無効
+        
+        if distance_filter.get('enable', False):
+            print(f"  Depth filter: {depth_min}m - {depth_max}m (from camera)")
+        
         try:
             # CUDA対応版がインストールされているため、GPUオプションを有効化
             gpu_options = []
@@ -441,6 +450,14 @@ class COLMAPMVSPipeline:
             else:
                 print("  Using CPU for Patch Match Stereo (GPU disabled)")
             
+            # 深度フィルタリングオプション
+            depth_options = []
+            if distance_filter.get('enable', False):
+                if depth_min > 0:
+                    depth_options.extend(["--PatchMatchStereo.depth_min", str(depth_min)])
+                if depth_max > 0:
+                    depth_options.extend(["--PatchMatchStereo.depth_max", str(depth_max)])
+            
             result = subprocess.run([
                 self.colmap_path, "patch_match_stereo",
                 "--workspace_path", str(workspace_path),
@@ -448,7 +465,8 @@ class COLMAPMVSPipeline:
                 "--PatchMatchStereo.geom_consistency", "true",
                 "--PatchMatchStereo.filter", "true",  # フィルタリングを有効化（必須）
                 "--PatchMatchStereo.num_iterations", str(self.patch_match_iterations),
-                *gpu_options
+                *gpu_options,
+                *depth_options
             ], capture_output=True, text=True, env=env, timeout=7200)
             
             if result.returncode != 0:

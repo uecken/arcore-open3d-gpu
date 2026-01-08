@@ -107,12 +107,13 @@ colmap:
   fusion_min_num_pixels: 5  # 融合時の最小ピクセル数
   max_image_size: 3200  # 画像の最大サイズ（メモリ節約のため）
   
-  # 点群の距離フィルタリング設定
+  # 距離フィルタリング設定（カメラからの距離でフィルタリング）
+  # これはPatch Match Stereo時に適用され、各カメラからの深度でフィルタリングされます
+  # 遠方の点は誤差が大きいため、適切な最大距離を設定してください
   distance_filter:
     enable: true              # 距離フィルタリングを有効にするか
-    min_distance: 0.1         # 最小距離（メートル）- これより近い点は除去
-    max_distance: 3.0         # 最大距離（メートル）- これより遠い点は除去
-    filter_by_origin: true    # 原点からの距離でフィルタリング（true推奨）
+    min_distance: 0.1         # 最小距離（メートル）- カメラからこれより近い点は除去
+    max_distance: 3.0         # 最大距離（メートル）- カメラからこれより遠い点は除去
 
 gpu:
   enabled: true
