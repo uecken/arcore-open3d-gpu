@@ -7,16 +7,16 @@ server:
   results_dir: "/opt/arcore-open3d-gpu/results"
 
 processing:
-  default_mode: "mvs"  # COLMAP MVSモードで再生成
+  default_mode: "rgbd"  # RGBDモード（ARCore Depth優先）
   
   tsdf:
-    voxel_length: 0.02  # 20mm (バランス型、処理高速化)
-    sdf_trunc: 0.16     # 160mm (voxel_length x 8)
+    voxel_length: 0.01  # 10mm (高密度、backupと同等)
+    sdf_trunc: 0.08     # 80mm (voxel_length x 8)
     color_type: "RGB8"
   
   depth:
     scale: 1000.0
-    trunc: 10.0
+    trunc: 5.0          # 5m以内（ノイズ削減）
     min_depth: 0.2
     filter_noise: true
     bilateral_filter: true

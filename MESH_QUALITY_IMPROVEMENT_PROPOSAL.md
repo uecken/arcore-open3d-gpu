@@ -473,11 +473,3 @@ def multiscale_tsdf_integration(frames, config):
 2. **第2段階**: COLMAP統合
 3. **第3段階**: LiDAR搭載端末への移行
 4. **第4段階**: NeRF / 3D Gaussian Splatting（必要に応じて）
-
-2. **第2段階**: COLMAP統合
-3. **第3段階**: LiDAR搭載端末への移行
-4. **第4段階**: NeRF / 3D Gaussian Splatting（必要に応じて）
-
-2. **第2段階**: COLMAP統合
-3. **第3段階**: LiDAR搭載端末への移行
-4. **第4段階**: NeRF / 3D Gaussian Splatting（必要に応じて）
