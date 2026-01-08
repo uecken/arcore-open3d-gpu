@@ -625,40 +625,43 @@ class COLMAPMVSPipeline:
         
         print(f"✓ Loaded point cloud: {len(pcd.points)} points")
         
-        # 距離フィルタリング（config.yamlから設定を取得）
+        # 後処理: 外れ値除去とバウンディングボックスフィルタリング
+        # COLMAPのstereo fusionでは外れ値が残ることがあるため、追加のフィルタリングが必要
         colmap_config = self.config.get('colmap', {})
         distance_filter = colmap_config.get('distance_filter', {})
+        
         if distance_filter.get('enable', False):
-            min_dist = distance_filter.get('min_distance', 0.1)
             max_dist = distance_filter.get('max_distance', 3.0)
-            filter_by_origin = distance_filter.get('filter_by_origin', True)
+            min_dist = distance_filter.get('min_distance', 0.1)
             
             if progress_callback:
-                progress_callback(86, f"Filtering points by distance ({min_dist}m - {max_dist}m)...")
+                progress_callback(86, f"Filtering outliers (max distance: {max_dist}m from centroid)...")
             
-            points = np.asarray(pcd.points)
-            
-            if filter_by_origin:
-                # 原点からの距離でフィルタリング
-                distances = np.linalg.norm(points, axis=1)
-            else:
-                # 点群の重心からの距離でフィルタリング
-                centroid = np.mean(points, axis=0)
-                distances = np.linalg.norm(points - centroid, axis=1)
-            
-            # 距離範囲内の点のみを保持
-            mask = (distances >= min_dist) & (distances <= max_dist)
-            
+            # Step 1: 統計的外れ値除去（大きな外れ値を除去）
             original_count = len(pcd.points)
+            pcd, ind = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
+            print(f"  Statistical outlier removal: {original_count} → {len(pcd.points)} points")
+            
+            # Step 2: 点群の重心からの距離でフィルタリング（部屋のサイズに合わせる）
+            points = np.asarray(pcd.points)
+            centroid = np.median(points, axis=0)  # 中央値を使用（外れ値に強い）
+            distances = np.linalg.norm(points - centroid, axis=1)
+            
+            # 距離の分布を確認
+            print(f"  Distance from centroid - Min: {distances.min():.2f}m, Max: {distances.max():.2f}m, Median: {np.median(distances):.2f}m")
+            
+            # max_distの2倍以内の点を保持（重心からの距離）
+            mask = distances <= (max_dist * 2)
             pcd = pcd.select_by_index(np.where(mask)[0])
-            filtered_count = len(pcd.points)
             
-            print(f"✓ Distance filtered: {original_count} → {filtered_count} points (removed {original_count - filtered_count})")
-            print(f"  Distance range: {min_dist}m - {max_dist}m")
+            print(f"  Distance filter (centroid ± {max_dist*2}m): {len(points)} → {len(pcd.points)} points")
             
-            if filtered_count == 0:
-                print("Error: All points were filtered out!")
-                return None, None
+            if len(pcd.points) < 100:
+                print("Warning: Too few points after filtering!")
+                # フィルタリングを緩める
+                pcd = o3d.io.read_point_cloud(str(fused_ply))
+                pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=10, std_ratio=3.0)
+                print(f"  Relaxed filtering: {len(pcd.points)} points")
         
         # Step 10: 点群からメッシュを生成（Poisson reconstruction）
         if progress_callback:
