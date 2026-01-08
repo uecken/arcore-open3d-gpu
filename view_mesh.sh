@@ -18,3 +18,4 @@ source "$VENV_DIR/bin/activate"
 cd "$SCRIPT_DIR"
 python view_mesh.py "$@"
 
+

@@ -70,3 +70,4 @@ source /opt/arcore-open3d/venv/bin/activate
 python view_mesh.py 6d7cd464
 ```
 
+
