@@ -106,6 +106,13 @@ colmap:
   patch_match_iterations: 5  # Patch Matchの反復回数（多いほど高品質だが遅い）
   fusion_min_num_pixels: 5  # 融合時の最小ピクセル数
   max_image_size: 3200  # 画像の最大サイズ（メモリ節約のため）
+  
+  # 点群の距離フィルタリング設定
+  distance_filter:
+    enable: true              # 距離フィルタリングを有効にするか
+    min_distance: 0.1         # 最小距離（メートル）- これより近い点は除去
+    max_distance: 3.0         # 最大距離（メートル）- これより遠い点は除去
+    filter_by_origin: true    # 原点からの距離でフィルタリング（true推奨）
 
 gpu:
   enabled: true

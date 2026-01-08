@@ -607,6 +607,41 @@ class COLMAPMVSPipeline:
         
         print(f"✓ Loaded point cloud: {len(pcd.points)} points")
         
+        # 距離フィルタリング（config.yamlから設定を取得）
+        colmap_config = self.config.get('colmap', {})
+        distance_filter = colmap_config.get('distance_filter', {})
+        if distance_filter.get('enable', False):
+            min_dist = distance_filter.get('min_distance', 0.1)
+            max_dist = distance_filter.get('max_distance', 3.0)
+            filter_by_origin = distance_filter.get('filter_by_origin', True)
+            
+            if progress_callback:
+                progress_callback(86, f"Filtering points by distance ({min_dist}m - {max_dist}m)...")
+            
+            points = np.asarray(pcd.points)
+            
+            if filter_by_origin:
+                # 原点からの距離でフィルタリング
+                distances = np.linalg.norm(points, axis=1)
+            else:
+                # 点群の重心からの距離でフィルタリング
+                centroid = np.mean(points, axis=0)
+                distances = np.linalg.norm(points - centroid, axis=1)
+            
+            # 距離範囲内の点のみを保持
+            mask = (distances >= min_dist) & (distances <= max_dist)
+            
+            original_count = len(pcd.points)
+            pcd = pcd.select_by_index(np.where(mask)[0])
+            filtered_count = len(pcd.points)
+            
+            print(f"✓ Distance filtered: {original_count} → {filtered_count} points (removed {original_count - filtered_count})")
+            print(f"  Distance range: {min_dist}m - {max_dist}m")
+            
+            if filtered_count == 0:
+                print("Error: All points were filtered out!")
+                return None, None
+        
         # Step 10: 点群からメッシュを生成（Poisson reconstruction）
         if progress_callback:
             progress_callback(87, "Generating mesh from point cloud...")
