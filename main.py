@@ -473,7 +473,52 @@ async def process_session(job_id: str, session_dir: Path):
         pcd = None
         mesh = None
         
-        if mode == "rgbd" and (parser.has_depth_data() or use_depth_estimation):
+        # MVS（COLMAP）パイプラインを使用する場合
+        if mode == "mvs":
+            # MVS (COLMAP) Pipeline
+            update_job(job_id, 10, "mvs_pipeline", "MVS pipeline (COLMAP)...")
+            
+            try:
+                from pipeline.colmap_mvs import COLMAPMVSPipeline
+                
+                mvs_pipeline = COLMAPMVSPipeline(CONFIG, GPU_CONFIG)
+                
+                def progress_cb(p, m):
+                    overall = 10 + int(p * 0.8)
+                    update_job(job_id, overall, "mvs_pipeline", m)
+                
+                pcd, mesh = mvs_pipeline.process_session(
+                    parser,
+                    session_dir,
+                    result_dir,
+                    progress_cb
+                )
+                
+                if pcd is None or len(pcd.points) == 0:
+                    print(f"[{job_id}] ⚠ Warning: MVS point cloud is empty!")
+                    pcd = None
+                else:
+                    print(f"[{job_id}] MVS point cloud: {len(pcd.points)} points")
+                
+                if mesh is None or len(mesh.triangles) == 0:
+                    print(f"[{job_id}] ⚠ Warning: MVS mesh is empty!")
+                    mesh = None
+                else:
+                    print(f"[{job_id}] MVS mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
+                    
+            except ImportError as e:
+                print(f"[{job_id}] Error importing COLMAP MVS pipeline: {e}")
+                print(f"[{job_id}] Falling back to RGB-D integration...")
+                mode = "rgbd"
+            except Exception as e:
+                print(f"[{job_id}] MVS pipeline error: {e}")
+                import traceback
+                traceback.print_exc()
+                print(f"[{job_id}] Falling back to RGB-D integration...")
+                mode = "rgbd"
+        
+        # RGB-D Integration（従来の方式、またはMVSが失敗した場合のフォールバック）
+        if mode == "rgbd" and (parser.has_depth_data() or use_depth_estimation) and (pcd is None or mesh is None):
             # RGB-D Integration (GPU対応)
             update_job(job_id, 10, "rgbd_integration", "RGB-D integration (GPU)...")
             

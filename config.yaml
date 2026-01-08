@@ -7,7 +7,7 @@ server:
   results_dir: "/opt/arcore-open3d-gpu/results"
 
 processing:
-  default_mode: "rgbd"
+  default_mode: "mvs"  # "rgbd" or "mvs" (MVS/COLMAPパイプライン)
   
   tsdf:
     # 部屋認識改善のため、TSDF解像度を調整
@@ -97,6 +97,15 @@ depth_estimation:
   # 深度推定の強制使用（Depthデータがあっても再推定して品質向上）
   force_use: true  # trueにすると、DepthデータがあってもMiDaSで再推定（GPU使用）
                    # 業界標準に合わせてARCore Depth APIを無視し、MiDaSで高精度な深度推定を行う
+                   # 注意: MVSモードでは使用されない（COLMAPのDense MVSを使用）
+
+# COLMAP MVSパイプライン設定
+colmap:
+  path: "colmap"  # COLMAP実行ファイルのパス（デフォルト: "colmap"）
+  # Patch Match Stereo設定
+  patch_match_iterations: 5  # Patch Matchの反復回数（多いほど高品質だが遅い）
+  fusion_min_num_pixels: 5  # 融合時の最小ピクセル数
+  max_image_size: 3200  # 画像の最大サイズ（メモリ節約のため）
 
 gpu:
   enabled: true
