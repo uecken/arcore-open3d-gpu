@@ -1018,13 +1018,14 @@
                     centerOffset = pointCloud.geometry.boundingBox.getCenter(new THREE.Vector3());
                 }
                 
-                // 軌跡ラインを作成
+                // 軌跡ラインを作成 (position: {x,y,z} または直接 {x,y,z} の両方に対応)
                 const positions = [];
                 poses.forEach(pose => {
+                    const pos = pose.position || pose;
                     positions.push(
-                        pose.position.x - centerOffset.x,
-                        pose.position.y - centerOffset.y,
-                        pose.position.z - centerOffset.z
+                        pos.x - centerOffset.x,
+                        pos.y - centerOffset.y,
+                        pos.z - centerOffset.z
                     );
                 });
                 
@@ -1044,10 +1045,11 @@
                 const startGeom = new THREE.SphereGeometry(0.02, 16, 16);
                 const startMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // 緑=開始
                 const startSphere = new THREE.Mesh(startGeom, startMat);
+                const firstPos = poses[0].position || poses[0];
                 startSphere.position.set(
-                    poses[0].position.x - centerOffset.x,
-                    poses[0].position.y - centerOffset.y,
-                    poses[0].position.z - centerOffset.z
+                    firstPos.x - centerOffset.x,
+                    firstPos.y - centerOffset.y,
+                    firstPos.z - centerOffset.z
                 );
                 startSphere.visible = false;
                 scene.add(startSphere);
@@ -1057,10 +1059,11 @@
                 const endMat = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // 赤=終了
                 const endSphere = new THREE.Mesh(endGeom, endMat);
                 const lastPose = poses[poses.length - 1];
+                const lastPos = lastPose.position || lastPose;
                 endSphere.position.set(
-                    lastPose.position.x - centerOffset.x,
-                    lastPose.position.y - centerOffset.y,
-                    lastPose.position.z - centerOffset.z
+                    lastPos.x - centerOffset.x,
+                    lastPos.y - centerOffset.y,
+                    lastPos.z - centerOffset.z
                 );
                 endSphere.visible = false;
                 scene.add(endSphere);
