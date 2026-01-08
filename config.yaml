@@ -7,7 +7,7 @@ server:
   results_dir: "/opt/arcore-open3d-gpu/results"
 
 processing:
-  default_mode: "mvs"  # "rgbd" or "mvs" (MVS/COLMAPパイプライン)
+  default_mode: "rgbd"  # "rgbd" or "mvs" (MVS/COLMAPパイプラインを使用する場合は"mvs"に変更、ただしCOLMAP CUDA対応版が必要)
   
   tsdf:
     # 部屋認識改善のため、TSDF解像度を調整
