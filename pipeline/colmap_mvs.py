@@ -253,6 +253,7 @@ class COLMAPMVSPipeline:
                 "--workspace_path", str(workspace_path),
                 "--workspace_format", "COLMAP",
                 "--PatchMatchStereo.geom_consistency", "true",
+                "--PatchMatchStereo.filter", "true",  # フィルタリングを有効化（必須）
                 "--PatchMatchStereo.num_iterations", str(self.patch_match_iterations),
                 *gpu_options
             ], capture_output=True, text=True, env=env, timeout=7200)
