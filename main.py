@@ -70,12 +70,18 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# 大容量アップロード用のリミット設定
-import starlette.formparsers as formparsers
+# 大容量アップロード用のリミット設定 (1GB)
+# Starlette/FastAPIのmultipartパーサーを直接パッチ
+import starlette.formparsers
 
-# デフォルトの1MBから1GBに変更
-formparsers.MultiPartParser.max_part_size = 1024 * 1024 * 1024  # 1GB per file
-formparsers.MultiPartParser.spool_max_size = 1024 * 1024 * 50   # 50MB spool before disk
+_original_init = starlette.formparsers.MultiPartParser.__init__
+
+def _patched_init(self, headers, stream, *, max_files=1000, max_fields=1000, max_part_size=1024*1024*1024):
+    """max_part_sizeを1GBに変更したMultiPartParser.__init__"""
+    _original_init(self, headers, stream, max_files=max_files, max_fields=max_fields, max_part_size=max_part_size)
+
+starlette.formparsers.MultiPartParser.__init__ = _patched_init
+print(f"✓ Upload limit set to 1GB")
 
 app.add_middleware(
     CORSMiddleware,
