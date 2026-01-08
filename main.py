@@ -20,7 +20,7 @@ import numpy as np
 import open3d as o3d
 
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -70,18 +70,18 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# 大容量アップロード用のリミット設定 (1GB)
+# 大容量アップロード用のリミット設定
 # Starlette/FastAPIのmultipartパーサーを直接パッチ
 import starlette.formparsers
 
 _original_init = starlette.formparsers.MultiPartParser.__init__
 
-def _patched_init(self, headers, stream, *, max_files=1000, max_fields=1000, max_part_size=1024*1024*1024):
-    """max_part_sizeを1GBに変更したMultiPartParser.__init__"""
+def _patched_init(self, headers, stream, *, max_files=10000, max_fields=10000, max_part_size=1024*1024*1024):
+    """大容量アップロード対応: max_files=10000, max_part_size=1GB"""
     _original_init(self, headers, stream, max_files=max_files, max_fields=max_fields, max_part_size=max_part_size)
 
 starlette.formparsers.MultiPartParser.__init__ = _patched_init
-print(f"✓ Upload limit set to 1GB")
+print(f"✓ Upload limits: max_files=10000, max_part_size=1GB")
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,6 +89,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# グローバル例外ハンドラー（フォームパース時のエラーをキャッチ）
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.exceptions import RequestValidationError
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    print(f"Validation Error: {exc}")
+    print(f"  Body: {exc.body if hasattr(exc, 'body') else 'N/A'}")
+    for error in exc.errors():
+        print(f"  - {error}")
+    return JSONResponse(
+        status_code=400,
+        content={"detail": str(exc.errors())}
+    )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    print(f"Global Exception: {type(exc).__name__}: {exc}")
+    import traceback
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal error: {type(exc).__name__}"}
+    )
+
 
 # リクエストのロギング（デバッグ用）
 @app.middleware("http")
@@ -108,10 +134,15 @@ async def log_requests(request, call_next):
         response = await call_next(request)
         process_time = time.time() - start_time
         print(f"Response: {response.status_code} (took {process_time:.3f}s)")
+        # 400エラーの場合、詳細をログ
+        if response.status_code == 400:
+            print(f"  WARNING: 400 Bad Request returned")
         return response
     except Exception as e:
         process_time = time.time() - start_time
         print(f"Error: {type(e).__name__}: {e} (took {process_time:.3f}s)")
+        import traceback
+        traceback.print_exc()
         raise
 
 # ディレクトリ設定
