@@ -688,6 +688,18 @@ class COLMAPMVSPipeline:
             
             print(f"✓ Generated mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
             
+            # 座標系変換: COLMAPの座標系からThree.js（viewer）の座標系へ
+            # X軸周りに180度回転（Y軸とZ軸を反転 = 上下反転）
+            rotation_matrix = np.array([
+                [1, 0, 0],
+                [0, -1, 0],
+                [0, 0, -1]
+            ])
+            pcd.rotate(rotation_matrix, center=(0, 0, 0))
+            mesh.rotate(rotation_matrix, center=(0, 0, 0))
+            mesh.compute_vertex_normals()
+            print("✓ Coordinate system transformed (COLMAP → viewer)")
+            
             # Step 11: テクスチャマッピング（オプション）
             mesh_ply = result_dir / "mesh_before_texture.ply"
             o3d.io.write_triangle_mesh(str(mesh_ply), mesh)
