@@ -236,19 +236,62 @@ processing:
 
 ## 結論
 
-### 推奨: **Raw Depth APIを使用**
+### 実証的な比較が必要
 
-**理由:**
-1. ✅ **より高解像度**（4倍〜16倍の向上が期待できる）
-2. ✅ **より多くの有効ピクセル**（10-30%以上が期待できる）
-3. ✅ **サーバー側で適切にフィルタリング可能**（既存設定を活用）
-4. ✅ **現在の低解像度・低有効ピクセル問題を解決可能**
+**現在の状況:**
+- Raw Depth APIを使用中
+- 解像度: 160x90
+- 有効ピクセル: 0.4%
 
-**必要な対応:**
-- Androidアプリ側: `acquireDepthImage()` → `acquireRawDepthImage()`に変更
-- サーバー側: 既存の`config.yaml`設定で対応可能（`bilateral_filter`、`filter_noise`）
+**推奨: 両方を試して比較**
 
-現在のDepth APIでは解像度160x90、有効ピクセル0.4%と非常に低いため、**Raw Depth APIに切り替えることで大幅な改善が期待できます**。
+1. **Depth API（通常）を試す**
+   - 解像度がどう変わるか確認
+   - 有効ピクセルがどう変わるか確認
+   - ARCoreのフィルタリング効果を確認
+
+2. **Raw Depth APIと比較**
+   - 解像度: Depth API vs Raw Depth API
+   - 有効ピクセル: Depth API vs Raw Depth API
+   - 最終的なメッシュ品質を比較
+
+### Depth API（通常）を試す場合
+
+**Androidアプリ側での変更:**
+```kotlin
+// Raw Depth API → Depth API（通常）に変更
+// val rawDepthImage = frame.acquireRawDepthImage()  // コメントアウト
+val depthImage = frame.acquireDepthImage()  // こちらを使用
+```
+
+**確認方法:**
+1. 新しいジョブでデータをアップロード
+2. 診断スクリプトで結果を確認:
+   ```bash
+   python diagnose_depth.py <new_job_id>
+   ```
+3. 以下の指標を比較:
+   - 解像度（width x height）
+   - 有効ピクセル率（valid_ratio）
+   - 深度範囲（depth_range_m）
+   - 標準偏差（std dev）
+
+### 判断基準
+
+**Depth API（通常）が良い場合:**
+- ✅ 解像度がRaw Depth APIと同じか高い
+- ✅ 有効ピクセルが10%以上
+- ✅ 標準偏差が低い（ノイズが少ない）
+
+**Raw Depth APIが良い場合:**
+- ✅ 解像度がDepth APIより高い（320x240以上）
+- ✅ 有効ピクセルが10%以上（サーバー側フィルタリング後）
+- ✅ サーバー側で適切にフィルタリング可能
+
+**注意:**
+- 現在のRaw Depth APIでは解像度160x90、有効ピクセル0.4%と低い
+- Depth APIを試すことで、ARCoreのフィルタリングがどの程度有効か確認できる
+- 実際の比較結果に基づいて判断することを推奨
 
 ---
 
