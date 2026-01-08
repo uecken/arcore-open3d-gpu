@@ -182,6 +182,7 @@ class COLMAPMVSPipeline:
         self,
         colmap_dir: Path,
         database_path: Path,
+        session_dir: Path,
         progress_callback: Callable[[int, str], None] = None
     ) -> bool:
         """COLMAPのpoint triangulatorを実行（ARCoreポーズを使用して特徴点を3D点に変換）"""
@@ -189,6 +190,7 @@ class COLMAPMVSPipeline:
             progress_callback(12, "Triangulating 3D points from features...")
         
         sparse_dir = colmap_dir / "sparse" / "0"
+        images_dir = session_dir / "images"  # 元の画像を使用（歪み補正前）
         env = os.environ.copy()
         env["QT_QPA_PLATFORM"] = "offscreen"
         
@@ -196,7 +198,7 @@ class COLMAPMVSPipeline:
             result = subprocess.run([
                 self.colmap_path, "point_triangulator",
                 "--database_path", str(database_path),
-                "--image_path", str(sparse_dir.parent.parent / "dense" / "images"),  # 歪み補正済み画像を使用
+                "--image_path", str(images_dir),
                 "--input_path", str(sparse_dir),
                 "--output_path", str(sparse_dir),
                 "--ClearPoints", "true"  # 既存の点をクリア
@@ -204,21 +206,7 @@ class COLMAPMVSPipeline:
             
             if result.returncode != 0:
                 print(f"Error: point_triangulator failed: {result.stderr}")
-                # 歪み補正前の画像を試す
-                session_dir = colmap_dir.parent.parent / "sessions" / colmap_dir.parent.name.split("_")[0] if "_" in str(colmap_dir) else colmap_dir.parent.parent
-                images_dir = session_dir / "images" if session_dir.exists() else colmap_dir.parent / "images"
-                if images_dir.exists():
-                    result = subprocess.run([
-                        self.colmap_path, "point_triangulator",
-                        "--database_path", str(database_path),
-                        "--image_path", str(images_dir),
-                        "--input_path", str(sparse_dir),
-                        "--output_path", str(sparse_dir),
-                        "--ClearPoints", "true"
-                    ], capture_output=True, text=True, env=env, timeout=3600)
-                    if result.returncode != 0:
-                        print(f"Error: point_triangulator failed with original images: {result.stderr}")
-                        return False
+                return False
             
             print("✓ 3D points triangulated")
             return True
