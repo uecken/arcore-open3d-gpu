@@ -69,7 +69,9 @@ sudo apt-get install -y \
     libqt5opengl5-dev \
     libcgal-dev \
     libcgal-qt5-dev \
-    libceres-dev
+    libceres-dev \
+    libopencv-dev \
+    opencv-data
 
 echo "✓ Dependencies installed"
 echo ""
