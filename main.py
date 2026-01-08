@@ -727,20 +727,36 @@ async def process_session(job_id: str, session_dir: Path):
                                         print(f"[{job_id}] ⚠ Mesh is not manifold (edge_manifold: {is_edge_manifold}, vertex_manifold: {is_vertex_manifold})")
                                         print(f"[{job_id}]   Attempting to fix non-manifold mesh...")
                                         
-                                        # 非多様体エッジを削除
-                                        mesh.remove_non_manifold_edges()
-                                        # non-manifold verticesの削除（Open3Dには直接的なメソッドがないため、
-                                        # remove_non_manifold_edges()とremove_unreferenced_vertices()で対応）
+                                        # 非多様体メッシュの修正（より強力な手法）
+                                        # 1. 重複三角形・頂点の削除
                                         mesh.remove_duplicated_triangles()
                                         mesh.remove_duplicated_vertices()
                                         mesh.remove_unreferenced_vertices()
+                                        
+                                        # 2. 非多様体エッジの削除（複数回実行）
+                                        for _ in range(3):
+                                            mesh.remove_non_manifold_edges()
+                                            mesh.remove_duplicated_triangles()
+                                            mesh.remove_duplicated_vertices()
+                                            mesh.remove_unreferenced_vertices()
+                                        
+                                        # 3. 退化三角形の削除
+                                        try:
+                                            mesh.remove_degenerate_triangles()
+                                        except AttributeError:
+                                            # Open3Dのバージョンによっては利用できない場合がある
+                                            pass
+                                        
+                                        # 4. 法線の再計算
+                                        mesh.compute_vertex_normals()
                                         
                                         # 再度確認
                                         is_edge_manifold = mesh.is_edge_manifold(allow_boundary_edges=True)
                                         is_vertex_manifold = mesh.is_vertex_manifold()
                                         
                                         if not is_edge_manifold or not is_vertex_manifold:
-                                            print(f"[{job_id}] ⚠ Mesh is still not manifold, skipping subdivision to prevent errors")
+                                            print(f"[{job_id}] ⚠ Mesh is still not manifold after cleanup, skipping subdivision to prevent errors")
+                                            print(f"[{job_id}]   Note: Non-manifold mesh may still work for visualization, but subdivision requires manifold mesh")
                                             subdiv_iterations = 0
                                         else:
                                             print(f"[{job_id}] ✓ Mesh is now manifold, proceeding with subdivision")
