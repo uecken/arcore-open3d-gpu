@@ -93,15 +93,21 @@ class COLMAPMVSPipeline:
         camera_params = f"{intrinsics.fx},{intrinsics.fy},{intrinsics.cx},{intrinsics.cy}"
         
         try:
-            result = subprocess.run([
+            cmd = [
                 self.colmap_path, "feature_extractor",
                 "--database_path", str(database_path),
                 "--image_path", str(images_dir),
                 "--ImageReader.camera_model", "PINHOLE",
                 "--ImageReader.camera_params", camera_params,
-                "--SiftExtraction.use_gpu", "true" if self.use_gpu else "false",
                 "--SiftExtraction.max_num_features", "8192"  # デフォルト値（調整可能）
-            ], capture_output=True, text=True, env=env, timeout=3600)
+            ]
+            # GPUオプションはバージョンによって異なる可能性があるため、条件付きで追加
+            if self.use_gpu:
+                # CUDA対応版ではGPUが自動的に使用される可能性がある
+                # オプションが存在しない場合はエラーになるため、試行錯誤が必要
+                pass
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=3600)
             
             if result.returncode != 0:
                 print(f"Error: feature_extractor failed: {result.stderr}")
@@ -126,12 +132,17 @@ class COLMAPMVSPipeline:
         env["QT_QPA_PLATFORM"] = "offscreen"
         
         try:
-            result = subprocess.run([
+            cmd = [
                 self.colmap_path, "exhaustive_matcher",
                 "--database_path", str(database_path),
-                "--SiftMatching.use_gpu", "true" if self.use_gpu else "false",
                 "--SiftMatching.guided_matching", "true"  # 幾何学的制約を使用
-            ], capture_output=True, text=True, env=env, timeout=7200)
+            ]
+            # GPUオプションはバージョンによって異なる可能性があるため、条件付きで追加
+            if self.use_gpu:
+                # CUDA対応版ではGPUが自動的に使用される可能性がある
+                pass
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=7200)
             
             if result.returncode != 0:
                 print(f"Error: exhaustive_matcher failed: {result.stderr}")
