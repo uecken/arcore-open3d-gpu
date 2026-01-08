@@ -655,8 +655,9 @@
                     }
                 }
                 
-                // Load point cloud (初期読み込みは設定で制御)
-                if (autoLoad.point_cloud && availableFiles['point_cloud.ply']) {
+                // 点群は初期読み込みでは読み込まない（点群表示に切り替えた際に読み込む）
+                // Load point cloud only if explicitly set to auto-load (usually not)
+                if (autoLoad.point_cloud && availableFiles['point_cloud.ply'] && defaultView === 'pointcloud') {
                     showLoading('Loading point cloud...');
                     try {
                         await loadPointCloud(jobId);
@@ -1030,12 +1031,27 @@
         // ============================================================
         // Display Modes
         // ============================================================
-        function setDisplayMode(mode) {
+        async function setDisplayMode(mode) {
             displayMode = mode;
             
             // Update buttons
             document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
             document.getElementById(`btn-${mode}`).classList.add('active');
+            
+            // 点群表示に切り替える場合、まだ読み込まれていない場合は読み込む
+            if (mode === 'pointcloud' && !pointCloud && availableFiles['point_cloud.ply'] && currentJobId) {
+                showLoading('Loading point cloud...');
+                try {
+                    await loadPointCloud(currentJobId);
+                } catch (error) {
+                    console.error('Failed to load point cloud:', error);
+                    showError('Failed to load point cloud: ' + (error.message || 'Unknown error'));
+                    setTimeout(() => hideLoading(), 3000);
+                    return;
+                } finally {
+                    hideLoading();
+                }
+            }
             
             // Update visibility
             if (pointCloud) pointCloud.visible = (mode === 'pointcloud' || mode === 'rfid');
