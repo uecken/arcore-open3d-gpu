@@ -208,8 +208,7 @@ class COLMAPMVSPipeline:
                 "--database_path", str(database_path),
                 "--image_path", str(images_dir),
                 "--input_path", str(sparse_dir),
-                "--output_path", str(sparse_dir),
-                "--ClearPoints", "true"  # 既存の点をクリア
+                "--output_path", str(sparse_dir)
             ], capture_output=True, text=True, env=env, timeout=3600)
             
             if result.returncode != 0:
