@@ -526,14 +526,14 @@ class COLMAPMVSPipeline:
             return None, None
         
         # Step 4: Point Triangulator（ARCoreポーズを使用して特徴点を3D点に変換）
-        if not self.run_point_triangulator(colmap_dir, database_path, session_dir, progress_callback):
-            print("Warning: Point triangulation failed, continuing anyway...")
-            # 続行（点が少ない場合でも）
+        # 注意: Rig IDエラーのため、point_triangulatorはスキップ
+        # ARCoreポーズがあれば、image_undistorterとpatch_match_stereoは直接実行可能
+        print("  Skipping point_triangulator (ARCore poses are sufficient)")
         
         # Step 5: Bundle Adjuster（ARCoreポーズを初期値として使用）
-        if not self.run_bundle_adjuster(colmap_dir, progress_callback):
-            print("Warning: Bundle adjustment failed, continuing with ARCore poses...")
-            # 続行（ARCoreポーズのまま）
+        # 注意: sparse reconstructionに点がない場合、bundle_adjusterは動作しない
+        # ARCoreポーズを使用して続行
+        print("  Skipping bundle_adjuster (no 3D points to adjust)")
         
         # Step 6: 画像の歪み補正
         if not self.run_image_undistorter(session_dir, colmap_dir, progress_callback):
