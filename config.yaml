@@ -7,7 +7,7 @@ server:
   results_dir: "/opt/arcore-open3d-gpu/results"
 
 processing:
-  default_mode: "mvs"  # "rgbd" or "mvs" (MVS/COLMAPパイプライン、COLMAP CUDA対応版がインストール済み)
+  default_mode: "rgbd"  # "rgbd" (安定) or "mvs" (高品質だが低解像度画像では不安定)
   
   tsdf:
     # 部屋認識改善のため、TSDF解像度を調整
@@ -133,6 +133,32 @@ gpu:
 output:
   point_cloud:
     format: "ply"
+    with_normals: true
+    with_colors: true
+  
+  mesh:
+    format: "ply"
+    compute_normals: true
+    simplify: false
+    target_triangles: 100000
+    # ビューアー表示用の簡略化設定
+    simplify_for_viewer: true  # web表示用の簡略化を有効にするか（true/false）- 大きなメッシュ（1GB以上）は必須
+    max_triangles_for_viewer: 500000  # ビューアー表示用の最大三角形数（50万、simplify_for_viewer=trueの場合のみ適用）
+
+# ビューアー設定
+viewer:
+  # 初期表示設定
+  default_view: "mesh"  # 初期表示モード: "mesh" または "pointcloud"
+  # 初期読み込み設定
+  auto_load:
+    point_cloud: false  # 初期読み込み時に点群を読み込むか（false推奨、メモリ節約）
+    mesh: true          # 初期読み込み時にメッシュを読み込むか（true推奨）
+    rfid: true          # 初期読み込み時にRFIDデータを読み込むか
+
+logging:
+  level: "INFO"
+  file: "/var/log/arcore-open3d/server.log"
+
     with_normals: true
     with_colors: true
   
