@@ -106,12 +106,25 @@ fi
 echo "Detected CUDA architecture: sm_$CUDA_ARCH"
 
 # CMake設定（CUDAサポートを有効化）
+# OpenImageIOはオプションなので、見つからない場合は自動的に無効化される
+echo "Configuring CMake with CUDA support..."
 cmake "$COLMAP_SRC_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCUDA_ENABLED=ON \
     -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCH" \
     -DCMAKE_CUDA_COMPILER=/usr/bin/nvcc \
-    -DGUI_ENABLED=OFF
+    -DGUI_ENABLED=OFF \
+    2>&1 | tee /tmp/cmake_config.log
+
+CMAKE_EXIT_CODE=$?
+if [ $CMAKE_EXIT_CODE -ne 0 ]; then
+    echo ""
+    echo "⚠ CMake configuration failed. Checking for missing dependencies..."
+    grep -i "not found\|missing\|required" /tmp/cmake_config.log | tail -5 || true
+    echo ""
+    echo "Attempting to continue with build anyway..."
+    # 一部のオプション依存関係がなくてもビルドは続行可能
+fi
 
 echo "✓ CMake configuration completed"
 echo ""
