@@ -482,7 +482,7 @@ class COLMAPMVSPipeline:
                 self.colmap_path, "stereo_fusion",
                 "--workspace_path", str(workspace_path),
                 "--workspace_format", "COLMAP",
-                "--input_type", "geometric",
+                "--input_type", "photometric",  # photometricを使用（geometricより点が多い）
                 "--output_path", str(output_ply),
                 "--StereoFusion.min_num_pixels", str(self.fusion_min_num_pixels)
             ], capture_output=True, text=True, env=env, timeout=3600)
