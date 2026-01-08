@@ -454,7 +454,9 @@ async def process_session(job_id: str, session_dir: Path):
         result_dir = RESULTS_DIR / job_id
         result_dir.mkdir(parents=True, exist_ok=True)
         
-        mode = jobs[job_id].get("mode", "rgbd")
+        # デフォルトモードをconfig.yamlから取得
+        default_mode = PROCESSING_CONFIG.get('default_mode', 'rgbd')
+        mode = jobs[job_id].get("mode") or default_mode
         
         # ステップ1: データ解析
         update_job(job_id, 5, "parsing", "Parsing session data...")
