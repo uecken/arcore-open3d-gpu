@@ -52,22 +52,23 @@ class COLMAPMVSPipeline:
     def check_colmap_available(self) -> bool:
         """COLMAPが利用可能か確認"""
         try:
+            # COLMAPは--versionをサポートしていないため、helpコマンドで確認
             result = subprocess.run(
-                [self.colmap_path, "--version"],
+                [self.colmap_path, "help"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
             if result.returncode == 0:
-                version = result.stdout.strip()
-                print(f"✓ COLMAP available: {version}")
+                # COLMAPが利用可能
+                print(f"✓ COLMAP available at: {self.colmap_path}")
                 return True
             else:
                 print(f"⚠ COLMAP not found or not working: {result.stderr}")
                 return False
         except FileNotFoundError:
             print(f"⚠ COLMAP not found at: {self.colmap_path}")
-            print("  Install COLMAP: https://colmap.github.io/install.html")
+            print("  Install COLMAP: sudo apt-get install colmap")
             return False
         except Exception as e:
             print(f"⚠ Error checking COLMAP: {e}")
