@@ -10,10 +10,10 @@ processing:
   default_mode: "rgbd"
   
   tsdf:
-    # メッシュの粗さを改善するため、解像度を少し細かく設定
-    # バランス: ノイズを飲み込ませつつ、詳細を保持（0.04 → 0.03）
-    voxel_length: 0.03         # 30mm解像度（0.04 → 0.03、より細かい解像度で詳細を保持）
-    sdf_trunc: 0.24            # 8倍（voxel_lengthの8倍程度: 0.03 * 8 = 0.24）
+    # 診断結果: 深度解像度160x90、画像解像度480x640、深度/画像比4.7%（非常に低い）
+    # 部屋認識を改善するため、TSDF解像度を細かく設定（メモリが許す範囲で）
+    voxel_length: 0.02         # 20mm解像度（0.03 → 0.02、部屋の詳細を保持するため細かく設定）
+    sdf_trunc: 0.16            # 8倍（voxel_lengthの8倍程度: 0.02 * 8 = 0.16）
     color_type: "RGB8"
   
   depth:
@@ -53,12 +53,12 @@ mesh:
     # 密度フィルタリングの調整
     density_threshold_percentile: 5  # 下位5%を除去（より厳しく）
   
-  # メッシュ平滑化（粗さ改善のため強化）
+  # メッシュ平滑化（部屋認識改善のため強化）
   smoothing:
     enable: true
     method: "laplacian"        # laplacian or taubin
-    iterations: 8              # 5 → 8に増やしてより滑らかに
-    lambda_filter: 0.4         # 0.5 → 0.4に減らしてより強く平滑化
+    iterations: 10             # 8 → 10に増やしてより滑らかに（部屋の壁面を滑らかに）
+    lambda_filter: 0.3         # 0.4 → 0.3に減らしてより強く平滑化
   
   # メッシュ最適化
   optimization:
@@ -70,13 +70,13 @@ mesh:
   # メッシュ品質向上（表示品質改善）
   quality_improvement:
     enable: true
-    # メッシュ細分化（Subdivision）- 滑らかな表面を実現（粗さ改善のため強化）
+    # メッシュ細分化（Subdivision）- 滑らかな表面を実現（部屋認識改善のため強化）
     subdivision:
       enable: true
       method: "loop"            # loop or midpoint
-      iterations: 1             # 細分化の反復回数（メモリ制約を考慮し1のまま、必要に応じて2に変更可能）
-      max_iterations: 2        # 最大反復回数（1 → 2に変更、メモリが許す場合に2回実行可能）
-      max_triangles: 5000000    # この三角形数以上は細分化をスキップ（3000000 → 5000000に増やす）
+      iterations: 2             # 細分化の反復回数（1 → 2、部屋の詳細を保持するため）
+      max_iterations: 2        # 最大反復回数
+      max_triangles: 10000000   # この三角形数以上は細分化をスキップ（5000000 → 10000000、部屋全体に対応）
     # 法線の改善
     normal_improvement:
       enable: true
