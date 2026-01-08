@@ -380,6 +380,49 @@ async def get_rfid(job_id: str):
         raise HTTPException(404, "File not found")
     return FileResponse(path)
 
+@app.get("/scenes/{job_id}/trajectory.json")
+async def get_trajectory(job_id: str):
+    """カメラ軌跡JSON（ARCoreポーズから生成）"""
+    # まず保存済みのtrajectory.jsonを確認
+    trajectory_path = RESULTS_DIR / job_id / "trajectory.json"
+    if trajectory_path.exists():
+        return FileResponse(trajectory_path)
+    
+    # 無ければARCoreポーズから生成
+    session_dir = SESSIONS_DIR / job_id
+    pose_file = session_dir / "ARCore_sensor_pose.txt"
+    
+    if not pose_file.exists():
+        raise HTTPException(404, "Pose data not found")
+    
+    poses = []
+    try:
+        with open(pose_file, 'r') as f:
+            prev_pos = None
+            for line in f:
+                if line.startswith('#'):
+                    continue
+                parts = line.strip().split()
+                if len(parts) >= 4:
+                    try:
+                        x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+                        # 重複を除去
+                        if prev_pos is None or (abs(x - prev_pos[0]) > 0.001 or abs(y - prev_pos[1]) > 0.001 or abs(z - prev_pos[2]) > 0.001):
+                            # 座標変換（COLMAP→viewer座標系）: X軸周りに180度回転
+                            poses.append({"x": x, "y": -y, "z": -z})
+                            prev_pos = (x, y, z)
+                    except ValueError:
+                        continue
+        
+        # 保存
+        trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(trajectory_path, 'w') as f:
+            json.dump({"poses": poses, "count": len(poses)}, f)
+        
+        return {"poses": poses, "count": len(poses)}
+    except Exception as e:
+        raise HTTPException(500, f"Error reading pose data: {str(e)}")
+
 @app.get("/scenes/{job_id}/info.json")
 async def get_scene_info(job_id: str):
     """シーン情報"""
