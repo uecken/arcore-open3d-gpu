@@ -185,6 +185,38 @@ class COLMAPMVSPipeline:
         transformed = scale * (centered @ R) + arcore_centroid
         return transformed
     
+    def _save_trajectory(self, parser: ARCoreDataParser, result_dir: Path) -> int:
+        """ARCoreカメラ軌跡を保存（点群と同じ座標系）"""
+        import json
+        
+        poses = []
+        prev_pos = None
+        
+        for frame in parser.frames:
+            if frame.pose:
+                pose_matrix = frame.pose.to_matrix()
+                position = pose_matrix[:3, 3]
+                
+                # 重複を除去（0.001m以上移動した場合のみ追加）
+                if prev_pos is None or np.linalg.norm(position - prev_pos) > 0.001:
+                    poses.append({
+                        "position": {
+                            "x": float(position[0]),
+                            "y": float(position[1]),
+                            "z": float(position[2])
+                        },
+                        "timestamp": frame.timestamp if hasattr(frame, 'timestamp') else None
+                    })
+                    prev_pos = position
+        
+        # 保存
+        trajectory_path = result_dir / "trajectory.json"
+        with open(trajectory_path, 'w') as f:
+            json.dump({"poses": poses, "count": len(poses), "coordinate_system": "arcore"}, f, indent=2)
+        
+        print(f"✓ Trajectory saved: {len(poses)} poses")
+        return len(poses)
+    
     def run_feature_extractor(
         self,
         session_dir: Path,
@@ -874,6 +906,9 @@ class COLMAPMVSPipeline:
                         mesh = mesh_textured
                         print("✓ Texture mapping applied")
             
+            # Step 12: ARCore軌跡を保存（点群と同じ座標系）
+            self._save_trajectory(parser, result_dir)
+            
             return pcd, mesh
             
         except Exception as e:
@@ -881,3 +916,4 @@ class COLMAPMVSPipeline:
             import traceback
             traceback.print_exc()
             return pcd, None
+
