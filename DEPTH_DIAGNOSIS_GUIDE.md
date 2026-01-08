@@ -177,36 +177,41 @@ mesh:
 
 ## 🔍 現在の設定確認
 
-現在の`config.yaml`設定:
+現在の`config.yaml`設定（推奨値適用済み）:
 
 ```yaml
 processing:
   tsdf:
-    voxel_length: 0.01  # ⚠ 細かすぎる（ノイズが面化する）
-    sdf_trunc: 0.08
+    voxel_length: 0.04  # ✓ ノイズを飲み込ませる設定
+    sdf_trunc: 0.32     # ✓ 適切な値
   
   depth:
-    trunc: 3.0          # ⚠ 遠距離まで含む（ノイズが多い）
+    trunc: 7.0          # ✓ 診断結果の99パーセンタイル値（無効値を除外）
     filter_noise: true  # ✓ 有効
     bilateral_filter: true  # ✓ 有効
 ```
 
-**推奨変更（Pixel 7 Proなどの推定Depth使用時）:**
+**診断結果に基づく推奨値（有効深度ピクセル0.4%の場合）:**
 
 ```yaml
 processing:
   tsdf:
-    voxel_length: 0.04  # 0.01 → 0.04m (4cm)
+    voxel_length: 0.04  # 0.01 → 0.04m (4cm) - ノイズを飲み込ませる
     sdf_trunc: 0.32     # 0.04 * 8 = 0.32
   
   depth:
-    trunc: 2.5          # 3.0 → 2.5m
+    trunc: 7.0          # 3.0 → 7.0m（診断結果の99パーセンタイル値、無効値マーカー65m以上を除外）
     filter_noise: true
     bilateral_filter: true
     bilateral_d: 5
     bilateral_sigma_color: 50.0
     bilateral_sigma_space: 50.0
 ```
+
+**注意:**
+- 有効深度ピクセルが0.4%と非常に少ない場合、Androidアプリ側で深度解像度を上げることを強く推奨
+- 現在の160x90解像度は非常に低い（推奨: 320x240以上）
+- `ANDROID_DEPTH_RESOLUTION_GUIDE.md`を参照してAndroidアプリ側の設定を確認してください
 
 ## 📝 次のステップ
 
