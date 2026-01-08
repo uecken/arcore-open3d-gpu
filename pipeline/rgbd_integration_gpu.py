@@ -613,7 +613,7 @@ class RGBDIntegrationGPU:
         self.set_intrinsics(parser.intrinsics)
         self.create_volume()
         
-        # 深度推定の強制使用（GPU使用のため）
+        # 深度推定の強制使用（GPU使用のため、業界標準に合わせてMiDaSを使用）
         depth_estimator = None
         if force_depth_estimation or not parser.has_depth_data():
             try:
@@ -624,7 +624,12 @@ class RGBDIntegrationGPU:
                     device=depth_config.get('device', 'cuda'),
                     gpu_config=self.gpu_config
                 )
-                print(f"✓ Depth estimator initialized (GPU: {depth_estimator.device})")
+                if force_depth_estimation:
+                    print(f"✓ MiDaS depth estimation enabled (force_use=true, GPU: {depth_estimator.device})")
+                    print(f"  Model: {depth_config.get('model', 'DPT_Large')}")
+                    print(f"  Using MiDaS instead of ARCore Depth API for higher quality")
+                else:
+                    print(f"✓ Depth estimator initialized (GPU: {depth_estimator.device})")
             except Exception as e:
                 print(f"⚠ Failed to initialize depth estimator: {e}")
                 if force_depth_estimation:

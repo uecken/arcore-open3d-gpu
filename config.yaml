@@ -94,7 +94,8 @@ depth_estimation:
   model: "DPT_Large"
   device: "cuda"
   # 深度推定の強制使用（Depthデータがあっても再推定して品質向上）
-  force_use: false  # trueにすると、DepthデータがあってもMiDaSで再推定（GPU使用）
+  force_use: true  # trueにすると、DepthデータがあってもMiDaSで再推定（GPU使用）
+                   # 業界標準に合わせてARCore Depth APIを無視し、MiDaSで高精度な深度推定を行う
 
 gpu:
   enabled: true
