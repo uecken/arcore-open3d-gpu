@@ -74,6 +74,75 @@ class COLMAPMVSPipeline:
             print(f"⚠ Error checking COLMAP: {e}")
             return False
     
+    def run_feature_extractor(
+        self,
+        session_dir: Path,
+        database_path: Path,
+        intrinsics: CameraIntrinsics,
+        progress_callback: Callable[[int, str], None] = None
+    ) -> bool:
+        """COLMAPの特徴点抽出を実行"""
+        if progress_callback:
+            progress_callback(5, "Extracting features from images...")
+        
+        images_dir = session_dir / "images"
+        env = os.environ.copy()
+        env["QT_QPA_PLATFORM"] = "offscreen"
+        
+        # カメラパラメータ: fx,fy,cx,cy
+        camera_params = f"{intrinsics.fx},{intrinsics.fy},{intrinsics.cx},{intrinsics.cy}"
+        
+        try:
+            result = subprocess.run([
+                self.colmap_path, "feature_extractor",
+                "--database_path", str(database_path),
+                "--image_path", str(images_dir),
+                "--ImageReader.camera_model", "PINHOLE",
+                "--ImageReader.camera_params", camera_params,
+                "--SiftExtraction.use_gpu", "true" if self.use_gpu else "false",
+                "--SiftExtraction.max_num_features", "8192"  # デフォルト値（調整可能）
+            ], capture_output=True, text=True, env=env, timeout=3600)
+            
+            if result.returncode != 0:
+                print(f"Error: feature_extractor failed: {result.stderr}")
+                return False
+            
+            print("✓ Features extracted")
+            return True
+        except Exception as e:
+            print(f"Error running feature_extractor: {e}")
+            return False
+    
+    def run_exhaustive_matcher(
+        self,
+        database_path: Path,
+        progress_callback: Callable[[int, str], None] = None
+    ) -> bool:
+        """COLMAPのexhaustive matcherを実行（全画像ペアをマッチング）"""
+        if progress_callback:
+            progress_callback(8, "Matching features between images...")
+        
+        env = os.environ.copy()
+        env["QT_QPA_PLATFORM"] = "offscreen"
+        
+        try:
+            result = subprocess.run([
+                self.colmap_path, "exhaustive_matcher",
+                "--database_path", str(database_path),
+                "--SiftMatching.use_gpu", "true" if self.use_gpu else "false",
+                "--SiftMatching.guided_matching", "true"  # 幾何学的制約を使用
+            ], capture_output=True, text=True, env=env, timeout=7200)
+            
+            if result.returncode != 0:
+                print(f"Error: exhaustive_matcher failed: {result.stderr}")
+                return False
+            
+            print("✓ Features matched")
+            return True
+        except Exception as e:
+            print(f"Error running exhaustive_matcher: {e}")
+            return False
+    
     def create_colmap_model_from_arcore_poses(
         self,
         parser: ARCoreDataParser,
@@ -108,6 +177,87 @@ class COLMAPMVSPipeline:
         
         print(f"✓ COLMAP model created from ARCore poses: {len(parser.frames)} images")
         return True
+    
+    def run_point_triangulator(
+        self,
+        colmap_dir: Path,
+        database_path: Path,
+        progress_callback: Callable[[int, str], None] = None
+    ) -> bool:
+        """COLMAPのpoint triangulatorを実行（ARCoreポーズを使用して特徴点を3D点に変換）"""
+        if progress_callback:
+            progress_callback(12, "Triangulating 3D points from features...")
+        
+        sparse_dir = colmap_dir / "sparse" / "0"
+        env = os.environ.copy()
+        env["QT_QPA_PLATFORM"] = "offscreen"
+        
+        try:
+            result = subprocess.run([
+                self.colmap_path, "point_triangulator",
+                "--database_path", str(database_path),
+                "--image_path", str(sparse_dir.parent.parent / "dense" / "images"),  # 歪み補正済み画像を使用
+                "--input_path", str(sparse_dir),
+                "--output_path", str(sparse_dir),
+                "--ClearPoints", "true"  # 既存の点をクリア
+            ], capture_output=True, text=True, env=env, timeout=3600)
+            
+            if result.returncode != 0:
+                print(f"Error: point_triangulator failed: {result.stderr}")
+                # 歪み補正前の画像を試す
+                session_dir = colmap_dir.parent.parent / "sessions" / colmap_dir.parent.name.split("_")[0] if "_" in str(colmap_dir) else colmap_dir.parent.parent
+                images_dir = session_dir / "images" if session_dir.exists() else colmap_dir.parent / "images"
+                if images_dir.exists():
+                    result = subprocess.run([
+                        self.colmap_path, "point_triangulator",
+                        "--database_path", str(database_path),
+                        "--image_path", str(images_dir),
+                        "--input_path", str(sparse_dir),
+                        "--output_path", str(sparse_dir),
+                        "--ClearPoints", "true"
+                    ], capture_output=True, text=True, env=env, timeout=3600)
+                    if result.returncode != 0:
+                        print(f"Error: point_triangulator failed with original images: {result.stderr}")
+                        return False
+            
+            print("✓ 3D points triangulated")
+            return True
+        except Exception as e:
+            print(f"Error running point_triangulator: {e}")
+            return False
+    
+    def run_bundle_adjuster(
+        self,
+        colmap_dir: Path,
+        progress_callback: Callable[[int, str], None] = None
+    ) -> bool:
+        """COLMAPのbundle adjusterを実行（ARCoreポーズを初期値として使用）"""
+        if progress_callback:
+            progress_callback(14, "Running bundle adjustment...")
+        
+        sparse_dir = colmap_dir / "sparse" / "0"
+        env = os.environ.copy()
+        env["QT_QPA_PLATFORM"] = "offscreen"
+        
+        try:
+            result = subprocess.run([
+                self.colmap_path, "bundle_adjuster",
+                "--input_path", str(sparse_dir),
+                "--output_path", str(sparse_dir),
+                "--BundleAdjustment.refine_focal_length", "false",  # 内部パラメータは固定（ARCoreから取得）
+                "--BundleAdjustment.refine_principal_point", "false",
+                "--BundleAdjustment.refine_extra_params", "false"
+            ], capture_output=True, text=True, env=env, timeout=7200)
+            
+            if result.returncode != 0:
+                print(f"Error: bundle_adjuster failed: {result.stderr}")
+                return False
+            
+            print("✓ Bundle adjustment completed")
+            return True
+        except Exception as e:
+            print(f"Error running bundle_adjuster: {e}")
+            return False
     
     def _write_cameras_file(self, camera_file: Path, intrinsics: CameraIntrinsics, frames: List[Frame]):
         """COLMAPのcameras.txtファイルを作成"""
@@ -360,22 +510,45 @@ class COLMAPMVSPipeline:
         if not self.check_colmap_available():
             return None, None
         
+        if parser.intrinsics is None:
+            print("Error: Camera intrinsics not available")
+            return None, None
+        
         colmap_dir = session_dir / "colmap"
         colmap_dir.mkdir(parents=True, exist_ok=True)
+        database_path = colmap_dir / "database.db"
         
-        # Step 1: ARCore VIOのポーズからCOLMAPモデルを作成（SfMをスキップ）
+        # Step 1: 特徴点抽出
+        if not self.run_feature_extractor(session_dir, database_path, parser.intrinsics, progress_callback):
+            return None, None
+        
+        # Step 2: 特徴点マッチング
+        if not self.run_exhaustive_matcher(database_path, progress_callback):
+            return None, None
+        
+        # Step 3: ARCore VIOのポーズからCOLMAPモデルを作成（初期値として使用）
         if not self.create_colmap_model_from_arcore_poses(parser, colmap_dir, progress_callback):
             return None, None
         
-        # Step 2: 画像の歪み補正
+        # Step 4: Point Triangulator（ARCoreポーズを使用して特徴点を3D点に変換）
+        if not self.run_point_triangulator(colmap_dir, database_path, session_dir, progress_callback):
+            print("Warning: Point triangulation failed, continuing anyway...")
+            # 続行（点が少ない場合でも）
+        
+        # Step 5: Bundle Adjuster（ARCoreポーズを初期値として使用）
+        if not self.run_bundle_adjuster(colmap_dir, progress_callback):
+            print("Warning: Bundle adjustment failed, continuing with ARCore poses...")
+            # 続行（ARCoreポーズのまま）
+        
+        # Step 6: 画像の歪み補正
         if not self.run_image_undistorter(session_dir, colmap_dir, progress_callback):
             return None, None
         
-        # Step 3: Patch Match Stereoで密な深度マップを生成
+        # Step 7: Patch Match Stereoで密な深度マップを生成
         if not self.run_patch_match_stereo(colmap_dir, progress_callback):
             return None, None
         
-        # Step 4: Stereo Fusionで密な点群を生成
+        # Step 8: Stereo Fusionで密な点群を生成
         fused_ply = colmap_dir / "dense" / "fused.ply"
         if not self.run_stereo_fusion(colmap_dir, fused_ply, progress_callback):
             return None, None
@@ -384,7 +557,7 @@ class COLMAPMVSPipeline:
             print("Error: Fused point cloud file not found")
             return None, None
         
-        # Step 5: 点群を読み込んでOpen3D形式に変換
+        # Step 9: 点群を読み込んでOpen3D形式に変換
         if progress_callback:
             progress_callback(85, "Loading point cloud...")
         
@@ -395,7 +568,7 @@ class COLMAPMVSPipeline:
         
         print(f"✓ Loaded point cloud: {len(pcd.points)} points")
         
-        # Step 6: 点群からメッシュを生成（Poisson reconstruction）
+        # Step 10: 点群からメッシュを生成（Poisson reconstruction）
         if progress_callback:
             progress_callback(87, "Generating mesh from point cloud...")
         
@@ -420,7 +593,7 @@ class COLMAPMVSPipeline:
             
             print(f"✓ Generated mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
             
-            # Step 7: テクスチャマッピング（オプション）
+            # Step 11: テクスチャマッピング（オプション）
             mesh_ply = result_dir / "mesh_before_texture.ply"
             o3d.io.write_triangle_mesh(str(mesh_ply), mesh)
             
