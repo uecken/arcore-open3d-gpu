@@ -521,19 +521,13 @@ class COLMAPMVSPipeline:
         if not self.run_exhaustive_matcher(database_path, progress_callback):
             return None, None
         
-        # Step 3: ARCore VIOのポーズからCOLMAPモデルを作成（初期値として使用）
-        if not self.create_colmap_model_from_arcore_poses(parser, colmap_dir, progress_callback):
-            return None, None
-        
-        # Step 4: Point Triangulator（ARCoreポーズを使用して特徴点を3D点に変換）
-        # 注意: Rig IDエラーのため、point_triangulatorはスキップ
-        # ARCoreポーズがあれば、image_undistorterとpatch_match_stereoは直接実行可能
-        print("  Skipping point_triangulator (ARCore poses are sufficient)")
-        
-        # Step 5: Bundle Adjuster（ARCoreポーズを初期値として使用）
-        # 注意: sparse reconstructionに点がない場合、bundle_adjusterは動作しない
-        # ARCoreポーズを使用して続行
-        print("  Skipping bundle_adjuster (no 3D points to adjust)")
+        # Step 3: COLMAPのmapperを実行してsparse reconstructionを構築
+        # ARCoreポーズは使用せず、完全なSfMを実行して3D点を生成
+        if not self.run_mapper(session_dir, colmap_dir, progress_callback):
+            print("Warning: COLMAP mapper failed, trying with ARCore poses...")
+            # フォールバック: ARCoreポーズを使用
+            if not self.create_colmap_model_from_arcore_poses(parser, colmap_dir, progress_callback):
+                return None, None
         
         # Step 6: 画像の歪み補正
         if not self.run_image_undistorter(session_dir, colmap_dir, progress_callback):
