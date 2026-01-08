@@ -10,11 +10,11 @@ processing:
   default_mode: "rgbd"
   
   tsdf:
-    # MiDaS深度推定を使用する場合、部屋全体をカバーするため、TSDF解像度を調整
-    # 部屋スキャンでは、細かすぎる解像度（0.02m）はノイズを拾いやすい
-    # バランスを取って、0.03m（30mm）に設定（部屋の構造を保持しつつ、ノイズを減らす）
-    voxel_length: 0.03         # 30mm解像度（0.02 → 0.03、部屋全体を安定して統合するため）
-    sdf_trunc: 0.24            # 8倍（voxel_lengthの8倍程度: 0.03 * 8 = 0.24）
+    # 部屋認識改善のため、TSDF解像度を調整
+    # MiDaS深度推定ではフレーム間の深度整合性が保証されないため、
+    # より粗い解像度でノイズを減らし、安定した統合を実現
+    voxel_length: 0.04         # 40mm解像度（0.03 → 0.04、ノイズを減らして安定した統合を実現）
+    sdf_trunc: 0.32            # 8倍（voxel_lengthの8倍程度: 0.04 * 8 = 0.32）
     color_type: "RGB8"
   
   depth:
@@ -27,8 +27,8 @@ processing:
     filter_noise: true         # 統計的外れ値除去を有効化
     bilateral_filter: true     # エッジ保持平滑化を有効化
     bilateral_d: 5
-    bilateral_sigma_color: 75.0  # 50.0 → 75.0（より強く平滑化、メッシュ品質向上）
-    bilateral_sigma_space: 75.0  # 50.0 → 75.0（より強く平滑化、メッシュ品質向上）
+    bilateral_sigma_color: 100.0  # 75.0 → 100.0（部屋認識改善のため、より強く平滑化）
+    bilateral_sigma_space: 100.0  # 75.0 → 100.0（部屋認識改善のため、より強く平滑化）
   
   pointcloud:
     voxel_down_size: 0.01     # 5mm（より高解像度）
