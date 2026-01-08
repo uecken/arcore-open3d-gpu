@@ -134,13 +134,10 @@ class COLMAPMVSPipeline:
         try:
             cmd = [
                 self.colmap_path, "exhaustive_matcher",
-                "--database_path", str(database_path),
-                "--SiftMatching.guided_matching", "true"  # 幾何学的制約を使用
+                "--database_path", str(database_path)
             ]
-            # GPUオプションはバージョンによって異なる可能性があるため、条件付きで追加
-            if self.use_gpu:
-                # CUDA対応版ではGPUが自動的に使用される可能性がある
-                pass
+            # CUDA対応版ではGPUが自動的に使用される
+            # オプションは最小限に（バージョン依存の問題を回避）
             
             result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=7200)
             
