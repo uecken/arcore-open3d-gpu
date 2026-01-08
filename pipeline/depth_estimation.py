@@ -178,12 +178,17 @@ class MiDaSDepthEstimator:
         relative_depth = self.estimate_depth(image, normalize=False)
         
         # 相対深度を反転（MiDaSは近いほど大きい値を出力）
+        # MiDaSの出力は大きい値=近い、小さい値=遠い
+        # これを距離（メートル）に変換するには反転が必要
         relative_depth = 1.0 / (relative_depth + 1e-6)
         
         # スケール・シフト適用
+        # scaleパラメータで相対深度をメートル単位に変換
+        # 例: scale=5.0の場合、相対深度0.2 → 1.0m、相対深度0.1 → 2.0m
         metric_depth = scale * relative_depth + shift
         
         # 有効範囲にクリップ (0.1m - 10m)
+        # 部屋スキャンでは通常1-10mの範囲が適切
         metric_depth = np.clip(metric_depth, 0.1, 10.0)
         
         return metric_depth.astype(np.float32)
