@@ -105,7 +105,7 @@ colmap:
   # Patch Match Stereo設定（GTX 1660 Ti 6GB用に最適化）
   patch_match_iterations: 3  # Patch Matchの反復回数（5→3、メモリ節約）
   fusion_min_num_pixels: 5   # 融合時の最小ピクセル数
-  max_image_size: 1600       # 画像の最大サイズ（3200→1600、6GB GPUでOOM回避）
+  max_image_size: 2400       # 画像の最大サイズ（1600→2400、特徴点マッチング改善）
   window_radius: 5           # Patch Matchのウィンドウ半径（小さいほどメモリ節約、デフォルト5）
   cache_size: 16             # キャッシュサイズGB（デフォルト32→16、6GB GPUでOOM回避）
   
