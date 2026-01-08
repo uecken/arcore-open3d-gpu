@@ -296,6 +296,7 @@
             <button id="btn-pointcloud" class="view-btn active" disabled>Point Cloud</button>
             <button id="btn-mesh" class="view-btn" disabled>Mesh</button>
             <button id="btn-rfid" class="view-btn" disabled>RFID</button>
+            <button id="btn-trajectory" class="view-btn" disabled>Trajectory</button>
         </div>
         
         <div class="stats">
@@ -310,6 +311,10 @@
             <div class="stat">
                 <span class="stat-value" id="rfid-count">0</span>
                 <span class="stat-label">RFIDs</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="trajectory-count">0</span>
+                <span class="stat-label">Poses</span>
             </div>
         </div>
     </header>
@@ -405,9 +410,11 @@
         let pointCloud = null;
         let mesh = null;
         let rfidMarkers = [];
+        let trajectoryLine = null;
+        let trajectorySpheres = [];
         let currentJobId = null;
         let availableFiles = {};
-        let displayMode = 'pointcloud'; // pointcloud, mesh, rfid
+        let displayMode = 'pointcloud'; // pointcloud, mesh, rfid, trajectory
         
         // ============================================================
         // Initialization
@@ -650,6 +657,14 @@
                     }
                 }
                 
+                // Load Trajectory (always try to load)
+                showLoading('Loading trajectory...');
+                try {
+                    await loadTrajectory(jobId);
+                } catch (error) {
+                    console.error('Failed to load trajectory:', error);
+                }
+                
                 // Set display mode - yaml設定のdefault_viewを使用、なければメッシュ優先
                 if (defaultView === 'mesh' && mesh) {
                     setDisplayMode('mesh');
@@ -690,9 +705,23 @@
             });
             rfidMarkers = [];
             
+            if (trajectoryLine) {
+                scene.remove(trajectoryLine);
+                trajectoryLine.geometry?.dispose();
+                trajectoryLine.material?.dispose();
+                trajectoryLine = null;
+            }
+            trajectorySpheres.forEach(s => {
+                scene.remove(s);
+                s.geometry?.dispose();
+                s.material?.dispose();
+            });
+            trajectorySpheres = [];
+            
             document.getElementById('point-count').textContent = '0';
             document.getElementById('face-count').textContent = '0';
             document.getElementById('rfid-count').textContent = '0';
+            document.getElementById('trajectory-count').textContent = '0';
         }
         
         // ============================================================
@@ -969,6 +998,85 @@
             }
         }
         
+        async function loadTrajectory(jobId) {
+            try {
+                const response = await fetch(`${API_BASE}/scenes/${jobId}/trajectory.json`);
+                const data = await response.json();
+                
+                const poses = data.poses || [];
+                
+                if (poses.length === 0) {
+                    document.getElementById('trajectory-count').textContent = '0';
+                    return;
+                }
+                
+                // メッシュ/点群の中心を取得して軌跡も同じオフセットを適用
+                let centerOffset = new THREE.Vector3(0, 0, 0);
+                if (mesh && mesh.geometry.boundingBox) {
+                    centerOffset = mesh.geometry.boundingBox.getCenter(new THREE.Vector3());
+                } else if (pointCloud && pointCloud.geometry.boundingBox) {
+                    centerOffset = pointCloud.geometry.boundingBox.getCenter(new THREE.Vector3());
+                }
+                
+                // 軌跡ラインを作成
+                const positions = [];
+                poses.forEach(pose => {
+                    positions.push(
+                        pose.position.x - centerOffset.x,
+                        pose.position.y - centerOffset.y,
+                        pose.position.z - centerOffset.z
+                    );
+                });
+                
+                const lineGeometry = new THREE.BufferGeometry();
+                lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color: 0xffff00,
+                    linewidth: 2
+                });
+                
+                trajectoryLine = new THREE.Line(lineGeometry, lineMaterial);
+                trajectoryLine.visible = false;
+                scene.add(trajectoryLine);
+                
+                // 開始点と終了点にマーカーを追加
+                const startGeom = new THREE.SphereGeometry(0.02, 16, 16);
+                const startMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // 緑=開始
+                const startSphere = new THREE.Mesh(startGeom, startMat);
+                startSphere.position.set(
+                    poses[0].position.x - centerOffset.x,
+                    poses[0].position.y - centerOffset.y,
+                    poses[0].position.z - centerOffset.z
+                );
+                startSphere.visible = false;
+                scene.add(startSphere);
+                trajectorySpheres.push(startSphere);
+                
+                const endGeom = new THREE.SphereGeometry(0.02, 16, 16);
+                const endMat = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // 赤=終了
+                const endSphere = new THREE.Mesh(endGeom, endMat);
+                const lastPose = poses[poses.length - 1];
+                endSphere.position.set(
+                    lastPose.position.x - centerOffset.x,
+                    lastPose.position.y - centerOffset.y,
+                    lastPose.position.z - centerOffset.z
+                );
+                endSphere.visible = false;
+                scene.add(endSphere);
+                trajectorySpheres.push(endSphere);
+                
+                document.getElementById('trajectory-count').textContent = poses.length.toString();
+                document.getElementById('btn-trajectory').disabled = false;
+                
+                console.log(`Trajectory loaded: ${poses.length} poses`);
+                
+            } catch (error) {
+                console.error('Trajectory load error:', error);
+                document.getElementById('btn-trajectory').disabled = true;
+            }
+        }
+        
         // ============================================================
         // Display Modes
         // ============================================================
@@ -981,8 +1089,10 @@
             
             // Update visibility
             if (pointCloud) pointCloud.visible = (mode === 'pointcloud' || mode === 'rfid');
-            if (mesh) mesh.visible = (mode === 'mesh' || mode === 'rfid');
+            if (mesh) mesh.visible = (mode === 'mesh' || mode === 'rfid' || mode === 'trajectory');
             rfidMarkers.forEach(m => m.visible = (mode === 'rfid'));
+            if (trajectoryLine) trajectoryLine.visible = (mode === 'trajectory');
+            trajectorySpheres.forEach(s => s.visible = (mode === 'trajectory'));
             
             // Show RFID with other modes if selected
             if (mode === 'rfid') {
@@ -991,11 +1101,21 @@
                 rfidMarkers.forEach(m => m.visible = true);
             }
             
+            // Trajectory mode shows trajectory with mesh
+            if (mode === 'trajectory') {
+                if (trajectoryLine) trajectoryLine.visible = true;
+                trajectorySpheres.forEach(s => s.visible = true);
+                if (mesh) mesh.visible = true;
+                rfidMarkers.forEach(m => m.visible = true); // RFIDも表示
+            }
+            
             // メッシュモードの場合はカメラを調整
             if (mode === 'mesh' && mesh) {
                 fitCameraToObject(mesh);
             } else if (mode === 'pointcloud' && pointCloud) {
                 fitCameraToObject(pointCloud);
+            } else if (mode === 'trajectory' && trajectoryLine) {
+                fitCameraToObject(trajectoryLine);
             }
         }
         
@@ -1027,6 +1147,7 @@
         document.getElementById('btn-pointcloud').addEventListener('click', () => setDisplayMode('pointcloud'));
         document.getElementById('btn-mesh').addEventListener('click', () => setDisplayMode('mesh'));
         document.getElementById('btn-rfid').addEventListener('click', () => setDisplayMode('rfid'));
+        document.getElementById('btn-trajectory').addEventListener('click', () => setDisplayMode('trajectory'));
         
         // ============================================================
         // Initialize
