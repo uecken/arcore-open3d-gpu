@@ -238,15 +238,13 @@ class COLMAPMVSPipeline:
         env["QT_QPA_PLATFORM"] = "offscreen"
         
         try:
-            # COLMAPのCUDAサポートを確認
-            # CUDAなし版でもCPUで実行可能（ただし遅い）
-            # GPU使用オプションはCUDAが利用可能な場合のみ
+            # CUDA対応版がインストールされているため、GPUオプションを有効化
             gpu_options = []
-            # 注意: インストールされたCOLMAPがCUDAなし版の場合、GPUオプションを付けてもエラーになる
-            # そのため、GPUオプションは使用しない（CPU版で実行）
-            # CUDA対応版をインストールする場合は、以下を有効化:
-            # if self.use_gpu:
-            #     gpu_options = ["--PatchMatchStereo.gpu_index", "0"]
+            if self.use_gpu:
+                gpu_options = ["--PatchMatchStereo.gpu_index", "0"]
+                print("  Using GPU for Patch Match Stereo (CUDA enabled)")
+            else:
+                print("  Using CPU for Patch Match Stereo (GPU disabled)")
             
             result = subprocess.run([
                 self.colmap_path, "patch_match_stereo",
