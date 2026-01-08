@@ -727,19 +727,10 @@ async def process_session(job_id: str, session_dir: Path):
                                         print(f"[{job_id}] ⚠ Mesh is not manifold (edge_manifold: {is_edge_manifold}, vertex_manifold: {is_vertex_manifold})")
                                         print(f"[{job_id}]   Attempting to fix non-manifold mesh...")
                                         
-                                        # 非多様体エッジと頂点を削除
+                                        # 非多様体エッジを削除
                                         mesh.remove_non_manifold_edges()
-                                        # non-manifold verticesを削除（メソッド名が異なるため、手動で処理）
-                                        try:
-                                            # Open3D 0.17以降では get_non_manifold_vertices() を使用
-                                            non_manifold_vertices = mesh.get_non_manifold_vertices()
-                                            if len(non_manifold_vertices) > 0:
-                                                # non-manifold verticesを含む三角形を削除する方が安全
-                                                # または、unreferenced verticesの削除で対処
-                                                pass
-                                        except AttributeError:
-                                            # メソッドが存在しない場合はスキップ
-                                            pass
+                                        # non-manifold verticesの削除（Open3Dには直接的なメソッドがないため、
+                                        # remove_non_manifold_edges()とremove_unreferenced_vertices()で対応）
                                         mesh.remove_duplicated_triangles()
                                         mesh.remove_duplicated_vertices()
                                         mesh.remove_unreferenced_vertices()
