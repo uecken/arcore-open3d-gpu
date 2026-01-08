@@ -42,9 +42,11 @@ class COLMAPMVSPipeline:
         self.colmap_path = colmap_config.get('path', 'colmap')  # COLMAP実行ファイルのパス
         
         # MVS設定
-        self.max_image_size = colmap_config.get('max_image_size', 3200)  # 画像の最大サイズ
-        self.patch_match_iterations = colmap_config.get('patch_match_iterations', 5)  # Patch Matchの反復回数
+        self.max_image_size = colmap_config.get('max_image_size', 1600)  # 画像の最大サイズ（OOM対策で1600に）
+        self.patch_match_iterations = colmap_config.get('patch_match_iterations', 3)  # Patch Matchの反復回数
         self.fusion_min_num_pixels = colmap_config.get('fusion_min_num_pixels', 5)  # 融合時の最小ピクセル数
+        self.window_radius = colmap_config.get('window_radius', 5)  # Patch Matchのウィンドウ半径
+        self.cache_size = colmap_config.get('cache_size', 16)  # キャッシュサイズGB
         
         # GPU設定
         self.use_gpu = self.gpu_config.get('enabled', True) and self.gpu_config.get('use_cuda', True)
@@ -458,6 +460,12 @@ class COLMAPMVSPipeline:
                 if depth_max > 0:
                     depth_options.extend(["--PatchMatchStereo.depth_max", str(depth_max)])
             
+            # メモリ節約オプション
+            memory_options = [
+                "--PatchMatchStereo.window_radius", str(self.window_radius),
+                "--PatchMatchStereo.cache_size", str(self.cache_size),
+            ]
+            
             result = subprocess.run([
                 self.colmap_path, "patch_match_stereo",
                 "--workspace_path", str(workspace_path),
@@ -466,7 +474,8 @@ class COLMAPMVSPipeline:
                 "--PatchMatchStereo.filter", "true",  # フィルタリングを有効化（必須）
                 "--PatchMatchStereo.num_iterations", str(self.patch_match_iterations),
                 *gpu_options,
-                *depth_options
+                *depth_options,
+                *memory_options
             ], capture_output=True, text=True, env=env, timeout=7200)
             
             if result.returncode != 0:
