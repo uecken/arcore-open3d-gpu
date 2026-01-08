@@ -19,11 +19,15 @@ from typing import List, Optional, Dict, Any
 import numpy as np
 import open3d as o3d
 
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 import aiofiles
+
+# 最大アップロードサイズ: 1GB
+MAX_UPLOAD_SIZE = 1024 * 1024 * 1024  # 1GB in bytes
 
 # パイプライン
 from utils.arcore_parser import ARCoreDataParser
@@ -65,6 +69,13 @@ app = FastAPI(
     description="High-speed 3D reconstruction using ARCore poses and Open3D",
     version="1.0.0"
 )
+
+# 大容量アップロード用のリミット設定
+import starlette.formparsers as formparsers
+
+# デフォルトの1MBから1GBに変更
+formparsers.MultiPartParser.max_part_size = 1024 * 1024 * 1024  # 1GB per file
+formparsers.MultiPartParser.spool_max_size = 1024 * 1024 * 50   # 50MB spool before disk
 
 app.add_middleware(
     CORSMiddleware,
@@ -1126,4 +1137,11 @@ if __name__ == "__main__":
     host = server_config.get('host', '0.0.0.0')
     port = server_config.get('port', 8000)
     
-    uvicorn.run(app, host=host, port=port)
+    # 大きなファイルアップロードに対応
+    uvicorn.run(
+        app, 
+        host=host, 
+        port=port,
+        timeout_keep_alive=300,  # 5分間のキープアライブ
+        limit_max_requests=None,
+    )
