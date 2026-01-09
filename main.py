@@ -655,7 +655,19 @@ def _process_session_sync(job_id: str, session_dir: Path):
         # MVS（COLMAP）パイプラインを使用する場合
         if mode == "mvs":
             # MVS (COLMAP) Pipeline
-            update_job(job_id, 10, "mvs_pipeline", "MVS pipeline (COLMAP)...")
+            # 方式に応じてモード名を更新
+            use_pose_priors = CONFIG.get('colmap', {}).get('use_pose_priors', False)
+            if use_pose_priors:
+                actual_mode = "MVS_Method2"  # pose_prior_mapper使用
+                update_job(job_id, 10, "mvs_pipeline", "MVS pipeline (Method 2: pose_prior_mapper)...")
+            else:
+                actual_mode = "MVS"  # 通常のCOLMAP
+                update_job(job_id, 10, "mvs_pipeline", "MVS pipeline (COLMAP)...")
+            
+            # ジョブのモードを更新
+            if job_id in jobs:
+                jobs[job_id]["mode"] = actual_mode
+                save_jobs_to_disk()
             
             try:
                 from pipeline.colmap_mvs import COLMAPMVSPipeline
