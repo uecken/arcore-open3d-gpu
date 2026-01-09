@@ -3274,4 +3274,3 @@ class COLMAPMVSPipeline:
             import traceback
             traceback.print_exc()
             return pcd, None
-

@@ -442,6 +442,3 @@ rfidMarker.position.sub(sceneCenterOffset);
 - ARCore座標系: https://developers.google.com/ar/reference/java/arcore/reference/com/google/ar/core/Frame
 - COLMAP: https://colmap.github.io/
 - Procrustes分析: https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.orthogonal_procrustes.html
-
----
-最終更新: 2026-01-09

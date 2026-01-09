@@ -1378,4 +1378,3 @@ def run_colmap_depth_pipeline(
     """
     pipeline = COLMAPDepthIntegration(config)
     return pipeline.process_session(session_dir, output_dir, progress_callback)
-
