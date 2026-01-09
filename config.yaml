@@ -7,7 +7,12 @@ server:
   results_dir: "/opt/arcore-open3d-gpu/results"
 
 processing:
-  default_mode: "mvs"  # MVSモード（COLMAP使用）
+  # 処理モード:
+  # - "mvs": COLMAP MVSパイプライン（従来方式）
+  # - "rgbd": ARCore Depth + Open3D TSDF
+  # - "colmap_depth": 方法C - スケール補正付きCOLMAP深度統合
+  #                   COLMAPの滑らかな深度 + ARCoreの正確な位置姿勢
+  default_mode: "mvs"
   
   tsdf:
     voxel_length: 0.01  # 10mm (高密度、backupと同等)
@@ -113,6 +118,25 @@ colmap:
     enable: false  # 一時的に無効化（座標変換の精度改善後に再有効化）
     min_distance: 0.1   # カメラから0.1m未満は除外（近すぎるノイズ）
     max_distance: 3.0   # カメラから3.0m以上は除外（遠すぎる誤差大）
+
+# 方法C: スケール補正付きCOLMAP深度統合
+colmap_depth:
+  # GPU TSDF統合設定
+  voxel_size: 0.01      # 1cm解像度
+  block_resolution: 16
+  block_count: 100000
+  
+  # 深度マップ設定
+  depth_scale: 1.0      # スケール補正後なので1.0
+  depth_max: 5.0        # 最大深度（メートル）
+  depth_min: 0.1        # 最小深度（メートル）
+  
+  # メッシュ生成設定
+  extract_mesh: true
+  mesh_weight_threshold: 3.0  # メッシュ抽出の重み閾値
+  
+  # 未登録フレームの処理
+  skip_unregistered: true  # COLMAPで未登録のフレームはスキップ
 
 gpu:
   enabled: true

@@ -40,7 +40,7 @@ try:
 except ImportError:
     # フォールバック: CPU版を使用
     from pipeline.rgbd_integration import RGBDIntegration
-    from pipeline.mesh_generation import MeshGenerator, create_mesh_from_rgbd_volume
+from pipeline.mesh_generation import MeshGenerator, create_mesh_from_rgbd_volume
     GPU_AVAILABLE = False
     print("⚠ GPU pipeline not available, using CPU pipeline")
 
@@ -305,66 +305,66 @@ async def upload_session(
         if not images or len(images) == 0:
             raise HTTPException(status_code=400, detail="at least one image is required")
         
-        session_dir = SESSIONS_DIR / job_id
-        session_dir.mkdir(parents=True, exist_ok=True)
-        images_dir = session_dir / "images"
-        images_dir.mkdir(exist_ok=True)
-        
-        processing_mode = mode if mode in ["rgbd", "pointcloud"] else DEFAULT_MODE
-        
-        # ファイル保存
-        async with aiofiles.open(session_dir / "metadata.json", "wb") as f:
-            await f.write(await metadata.read())
-        async with aiofiles.open(session_dir / "camera_intrinsics.json", "wb") as f:
-            await f.write(await intrinsics.read())
-        async with aiofiles.open(session_dir / "ARCore_sensor_pose.txt", "wb") as f:
-            await f.write(await poses.read())
-        if rfid:
-            async with aiofiles.open(session_dir / "rfid_detections.json", "wb") as f:
-                await f.write(await rfid.read())
-        
-        # 画像保存
-        for img in images:
-            async with aiofiles.open(images_dir / img.filename, "wb") as f:
-                await f.write(await img.read())
-        
-        # Depth保存（存在する場合）
-        has_depth = False
-        if depths:
-            depth_dir = session_dir / "depth"
-            depth_dir.mkdir(exist_ok=True)
-            for depth in depths:
-                async with aiofiles.open(depth_dir / depth.filename, "wb") as f:
-                    await f.write(await depth.read())
-            has_depth = True
-        
-        # ジョブ登録
-        jobs[job_id] = {
-            "status": "queued",
-            "progress": 0,
-            "image_count": len(images),
-            "has_depth": has_depth,
-            "mode": processing_mode,
-            "created_at": datetime.now().isoformat(),
-            "current_step": "queued"
-        }
-        
-        # ディスクに保存
-        save_jobs_to_disk()
-        
-        # バックグラウンド処理開始
-        background_tasks.add_task(process_session, job_id, session_dir)
+    session_dir = SESSIONS_DIR / job_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    images_dir = session_dir / "images"
+    images_dir.mkdir(exist_ok=True)
+    
+        processing_mode = mode if mode in ["rgbd", "pointcloud", "mvs", "colmap_depth"] else DEFAULT_MODE
+    
+    # ファイル保存
+    async with aiofiles.open(session_dir / "metadata.json", "wb") as f:
+        await f.write(await metadata.read())
+    async with aiofiles.open(session_dir / "camera_intrinsics.json", "wb") as f:
+        await f.write(await intrinsics.read())
+    async with aiofiles.open(session_dir / "ARCore_sensor_pose.txt", "wb") as f:
+        await f.write(await poses.read())
+    if rfid:
+        async with aiofiles.open(session_dir / "rfid_detections.json", "wb") as f:
+            await f.write(await rfid.read())
+    
+    # 画像保存
+    for img in images:
+        async with aiofiles.open(images_dir / img.filename, "wb") as f:
+            await f.write(await img.read())
+    
+    # Depth保存（存在する場合）
+    has_depth = False
+    if depths:
+        depth_dir = session_dir / "depth"
+        depth_dir.mkdir(exist_ok=True)
+        for depth in depths:
+            async with aiofiles.open(depth_dir / depth.filename, "wb") as f:
+                await f.write(await depth.read())
+        has_depth = True
+    
+    # ジョブ登録
+    jobs[job_id] = {
+        "status": "queued",
+        "progress": 0,
+        "image_count": len(images),
+        "has_depth": has_depth,
+        "mode": processing_mode,
+        "created_at": datetime.now().isoformat(),
+        "current_step": "queued"
+    }
+    
+    # ディスクに保存
+    save_jobs_to_disk()
+    
+    # バックグラウンド処理開始
+    background_tasks.add_task(process_session, job_id, session_dir)
         
         print(f"[{job_id}] Upload successful, job queued")
-        
-        return {
-            "job_id": job_id,
-            "status": "queued",
-            "image_count": len(images),
-            "has_depth": has_depth,
-            "mode": processing_mode,
-            "message": f"Processing started. Check status at /api/v1/jobs/{job_id}/status"
-        }
+    
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "image_count": len(images),
+        "has_depth": has_depth,
+        "mode": processing_mode,
+        "message": f"Processing started. Check status at /api/v1/jobs/{job_id}/status"
+    }
     except HTTPException:
         print(f"[{job_id}] HTTPException raised")
         raise
@@ -449,7 +449,7 @@ async def get_mesh(job_id: str, corrected: bool = False):
     if corrected:
         path = RESULTS_DIR / job_id / "mesh_corrected.ply"
     else:
-        path = RESULTS_DIR / job_id / "mesh.ply"
+    path = RESULTS_DIR / job_id / "mesh.ply"
     if not path.exists():
         raise HTTPException(404, "File not found")
     return FileResponse(path, media_type="application/octet-stream")
@@ -632,6 +632,85 @@ def _process_session_sync(job_id: str, session_dir: Path):
         pcd = None
         mesh = None
         
+        # 方法C: スケール補正付きCOLMAP深度統合
+        # COLMAPで深度マップを生成し、ARCoreポーズと統合
+        if mode == "colmap_depth":
+            update_job(job_id, 10, "colmap_depth", "Method C: COLMAP depth integration...")
+            
+            try:
+                # まずCOLMAPで深度マップを生成（まだ生成されていない場合）
+                colmap_dir = session_dir / "colmap"
+                depth_maps_dir = colmap_dir / "dense" / "stereo" / "depth_maps"
+                
+                if not depth_maps_dir.exists() or len(list(depth_maps_dir.glob("*.geometric.bin"))) == 0:
+                    print(f"[{job_id}] Running COLMAP to generate depth maps first...")
+                    update_job(job_id, 15, "colmap_depth", "Running COLMAP MVS for depth maps...")
+                    
+                    from pipeline.colmap_mvs import COLMAPMVSPipeline
+                    
+                    mvs_pipeline = COLMAPMVSPipeline(CONFIG, GPU_CONFIG)
+                    
+                    def mvs_progress_cb(p, m):
+                        # COLMAP処理は15-60%
+                        overall = 15 + int(p * 0.45)
+                        update_job(job_id, overall, "colmap_depth", f"COLMAP: {m}")
+                    
+                    # COLMAP処理を実行（メッシュ生成はスキップ）
+                    mvs_pipeline.process_session(
+                        parser,
+                        session_dir,
+                        result_dir,
+                        mvs_progress_cb
+                    )
+                    print(f"[{job_id}] COLMAP depth maps generated")
+                else:
+                    depth_map_count = len(list(depth_maps_dir.glob("*.geometric.bin")))
+                    print(f"[{job_id}] Using existing COLMAP depth maps: {depth_map_count} files")
+                
+                # 方法Cパイプラインを実行
+                from pipeline.colmap_depth_integration import run_colmap_depth_pipeline
+                
+                def depth_progress_cb(p, m):
+                    # 方法C処理は60-100%
+                    overall = 60 + int(p * 0.4)
+                    update_job(job_id, overall, "colmap_depth", m)
+                
+                pcd_path, mesh_path, stats = run_colmap_depth_pipeline(
+                    session_dir,
+                    result_dir,
+                    CONFIG,
+                    depth_progress_cb
+                )
+                
+                if pcd_path and pcd_path.exists():
+                    pcd = o3d.io.read_point_cloud(str(pcd_path))
+                    print(f"[{job_id}] COLMAP depth point cloud: {len(pcd.points)} points")
+                else:
+                    print(f"[{job_id}] ⚠ No point cloud from COLMAP depth integration")
+                
+                if mesh_path and mesh_path.exists():
+                    mesh = o3d.io.read_triangle_mesh(str(mesh_path))
+                    print(f"[{job_id}] COLMAP depth mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
+                else:
+                    print(f"[{job_id}] ⚠ No mesh from COLMAP depth integration")
+                
+                # 結果を保存
+                jobs[job_id]["result"] = {
+                    **jobs[job_id].get("result", {}),
+                    "colmap_depth_stats": stats
+                }
+                    
+            except ImportError as e:
+                print(f"[{job_id}] Error importing COLMAP depth pipeline: {e}")
+                print(f"[{job_id}] Falling back to MVS...")
+                mode = "mvs"
+            except Exception as e:
+                print(f"[{job_id}] COLMAP depth pipeline error: {e}")
+                import traceback
+                traceback.print_exc()
+                print(f"[{job_id}] Falling back to MVS...")
+                mode = "mvs"
+        
         # MVS（COLMAP）パイプラインを使用する場合
         if mode == "mvs":
             # MVS (COLMAP) Pipeline
@@ -686,7 +765,7 @@ def _process_session_sync(job_id: str, session_dir: Path):
                 integration = RGBDIntegration(PROCESSING_CONFIG, GPU_CONFIG)
             else:
                 # CPU版を使用（後方互換性のため）
-                integration = RGBDIntegration(PROCESSING_CONFIG)
+            integration = RGBDIntegration(PROCESSING_CONFIG)
             
             def progress_cb(p, m):
                 overall = 10 + int(p * 0.5)
@@ -700,7 +779,7 @@ def _process_session_sync(job_id: str, session_dir: Path):
                     if GPU_AVAILABLE:
                         pcd, mesh = create_mesh_from_rgbd_volume(integration.volume, CONFIG, GPU_CONFIG)
                     else:
-                        pcd, mesh = create_mesh_from_rgbd_volume(integration.volume, CONFIG)
+                pcd, mesh = create_mesh_from_rgbd_volume(integration.volume, CONFIG)
                     
                     # 点群とメッシュの確認
                     if pcd is not None:
@@ -790,8 +869,8 @@ def _process_session_sync(job_id: str, session_dir: Path):
                     if GPU_AVAILABLE:
                         mesh_gen = MeshGenerator(CONFIG.get('mesh', {}), GPU_CONFIG)
                     else:
-                        mesh_gen = MeshGenerator(CONFIG.get('mesh', {}))
-                    mesh = mesh_gen.generate(pcd)
+            mesh_gen = MeshGenerator(CONFIG.get('mesh', {}))
+            mesh = mesh_gen.generate(pcd)
                     
                     if mesh is not None and len(mesh.vertices) > 0:
                         print(f"[{job_id}] Generated mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
@@ -829,7 +908,7 @@ def _process_session_sync(job_id: str, session_dir: Path):
                     else:
                         pcd.paint_uniform_color([0.2, 0.5, 1.0])
                 
-                o3d.io.write_point_cloud(str(pcd_path), pcd)
+            o3d.io.write_point_cloud(str(pcd_path), pcd)
                 print(f"[{job_id}] ✓ Saved point cloud: {len(pcd.points)} points")
             except Exception as e:
                 print(f"[{job_id}] ✗ Error saving point cloud: {e}")
