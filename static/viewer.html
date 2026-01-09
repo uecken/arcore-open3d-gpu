@@ -259,6 +259,53 @@
             font-size: 12px;
         }
         
+        /* Progress bar */
+        .progress-container {
+            width: 300px;
+            margin-top: 20px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(0, 200, 150, 0.2);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00c896, #00aaff);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-text {
+            margin-top: 8px;
+            color: #666;
+            font-size: 11px;
+            text-align: center;
+        }
+        
+        .progress-step {
+            margin-top: 12px;
+            color: #00c896;
+            font-size: 12px;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        .progress-detail {
+            margin-top: 4px;
+            color: #888;
+            font-size: 11px;
+            text-align: center;
+        }
+        
+        .progress-container.hidden {
+            display: none;
+        }
+        
         /* Controls help */
         .controls-help {
             position: fixed;
@@ -296,7 +343,8 @@
             <button id="btn-pointcloud" class="view-btn active" disabled>Point Cloud</button>
             <button id="btn-mesh" class="view-btn" disabled>Mesh</button>
             <button id="btn-rfid" class="view-btn" disabled>RFID</button>
-            <button id="btn-trajectory" class="view-btn" disabled>Trajectory</button>
+            <button id="btn-trajectory" class="view-btn" disabled>ARCore軌跡</button>
+            <button id="btn-trajectory-colmap" class="view-btn" disabled>COLMAP軌跡</button>
         </div>
         
         <div class="stats">
@@ -354,6 +402,14 @@
     <div class="loading-overlay" id="loading-overlay">
         <div class="loading-spinner"></div>
         <div class="loading-text" id="loading-text">Loading...</div>
+        <div class="progress-container hidden" id="progress-container">
+            <div class="progress-step" id="progress-step">Processing...</div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="progress-text" id="progress-text">0%</div>
+            <div class="progress-detail" id="progress-detail"></div>
+        </div>
     </div>
     
     <!-- Controls Help -->
@@ -412,9 +468,11 @@
         let rfidMarkers = [];
         let trajectoryLine = null;
         let trajectorySpheres = [];
+        let trajectoryColmapLine = null;
+        let trajectoryColmapSpheres = [];
         let currentJobId = null;
         let availableFiles = {};
-        let displayMode = 'pointcloud'; // pointcloud, mesh, rfid, trajectory
+        let displayMode = 'pointcloud'; // pointcloud, mesh, rfid, trajectory, trajectory_colmap
         let sceneCenterOffset = new THREE.Vector3(0, 0, 0); // メッシュ/点群の中心オフセット
         
         // ============================================================
@@ -496,13 +554,104 @@
         // ============================================================
         // Loading UI
         // ============================================================
-        function showLoading(text = 'Loading...') {
+        let progressPollingInterval = null;
+        
+        function showLoading(text = 'Loading...', showProgress = false) {
             document.getElementById('loading-text').textContent = text;
             document.getElementById('loading-overlay').classList.remove('hidden');
+            
+            const progressContainer = document.getElementById('progress-container');
+            if (showProgress) {
+                progressContainer.classList.remove('hidden');
+            } else {
+                progressContainer.classList.add('hidden');
+            }
+        }
+        
+        function updateProgress(percent, message, step = null) {
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            const loadingText = document.getElementById('loading-text');
+            const progressContainer = document.getElementById('progress-container');
+            const progressStep = document.getElementById('progress-step');
+            const progressDetail = document.getElementById('progress-detail');
+            
+            progressContainer.classList.remove('hidden');
+            progressFill.style.width = `${percent}%`;
+            progressText.textContent = `${percent}%`;
+            
+            // ステップ名を日本語で表示
+            const stepNames = {
+                'queued': '待機中',
+                'parsing': 'データ解析',
+                'mvs_pipeline': 'MVS処理 (COLMAP)',
+                'rgbd_integration': 'RGB-D統合',
+                'pointcloud_fusion': '点群融合',
+                'mesh_generation': 'メッシュ生成',
+                'extracting': '点群・メッシュ抽出',
+                'saving': '結果保存',
+                'done': '完了'
+            };
+            
+            if (step) {
+                progressStep.textContent = stepNames[step] || step;
+            }
+            
+            if (message) {
+                progressDetail.textContent = message;
+                loadingText.textContent = '処理中...';
+            }
         }
         
         function hideLoading() {
             document.getElementById('loading-overlay').classList.add('hidden');
+            document.getElementById('progress-container').classList.add('hidden');
+            if (progressPollingInterval) {
+                clearInterval(progressPollingInterval);
+                progressPollingInterval = null;
+            }
+        }
+        
+        // ============================================================
+        // Progress Polling
+        // ============================================================
+        async function pollJobProgress(jobId) {
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/jobs/${jobId}/status`);
+                if (!response.ok) return null;
+                
+                const status = await response.json();
+                return status;
+            } catch (error) {
+                console.error('Failed to poll progress:', error);
+                return null;
+            }
+        }
+        
+        function startProgressPolling(jobId) {
+            if (progressPollingInterval) {
+                clearInterval(progressPollingInterval);
+            }
+            
+            progressPollingInterval = setInterval(async () => {
+                const status = await pollJobProgress(jobId);
+                if (!status) return;
+                
+                if (status.status === 'completed') {
+                    hideLoading();
+                    // Reload job data
+                    loadJob(jobId);
+                } else if (status.status === 'failed') {
+                    hideLoading();
+                    showLoading('Processing failed: ' + (status.error || 'Unknown error'));
+                    setTimeout(hideLoading, 5000);
+                } else if (status.status === 'processing') {
+                    const progress = status.progress || 0;
+                    const message = status.message || 'Processing...';
+                    const step = status.current_step || null;
+                    updateProgress(progress, message, step);
+                }
+            }, 10000); // Poll every 10 seconds
         }
         
         // ============================================================
@@ -592,7 +741,30 @@
             // Update info panel
             document.getElementById('info-job-id').textContent = jobId.substring(0, 8);
             
+            let isPollingProgress = false;
+            
             try {
+                // First, check job status via API
+                const statusResponse = await fetch(`${API_BASE}/api/v1/jobs/${jobId}/status`);
+                if (statusResponse.ok) {
+                    const status = await statusResponse.json();
+                    
+                    // If job is still processing, show progress and start polling
+                    if (status.status === 'processing' || status.status === 'pending' || status.status === 'queued') {
+                        document.getElementById('info-status').textContent = status.status;
+                        document.getElementById('info-mode').textContent = (status.mode || '-').toUpperCase();
+                        
+                        const progress = status.progress || 0;
+                        const message = status.message || 'Processing...';
+                        const step = status.current_step || null;
+                        showLoading('処理中...', true);
+                        updateProgress(progress, message, step);
+                        startProgressPolling(jobId);
+                        isPollingProgress = true;
+                        return; // Don't try to load files yet
+                    }
+                }
+                
                 // Get job info
                 console.log('Loading job info from:', `${API_BASE}/scenes/${jobId}/info.json`);
                 const infoResponse = await fetch(`${API_BASE}/scenes/${jobId}/info.json`);
@@ -666,6 +838,14 @@
                     console.error('Failed to load trajectory:', error);
                 }
                 
+                // Load COLMAP Trajectory
+                showLoading('Loading COLMAP trajectory...');
+                try {
+                    await loadTrajectoryColmap(jobId);
+                } catch (error) {
+                    console.error('Failed to load COLMAP trajectory:', error);
+                }
+                
                 // Set display mode - yaml設定のdefault_viewを使用、なければメッシュ優先
                 if (defaultView === 'mesh' && mesh) {
                     setDisplayMode('mesh');
@@ -682,7 +862,10 @@
                 showLoading('Error: ' + (error.message || 'Unknown error'));
                 setTimeout(() => hideLoading(), 3000);
             } finally {
-                hideLoading();
+                // Only hide loading for completed jobs (not processing ones)
+                if (!isPollingProgress) {
+                    hideLoading();
+                }
             }
         }
         
@@ -718,6 +901,20 @@
                 s.material?.dispose();
             });
             trajectorySpheres = [];
+            
+            // COLMAP軌跡のクリーンアップ
+            if (trajectoryColmapLine) {
+                scene.remove(trajectoryColmapLine);
+                trajectoryColmapLine.geometry?.dispose();
+                trajectoryColmapLine.material?.dispose();
+                trajectoryColmapLine = null;
+            }
+            trajectoryColmapSpheres.forEach(s => {
+                scene.remove(s);
+                s.geometry?.dispose();
+                s.material?.dispose();
+            });
+            trajectoryColmapSpheres = [];
             
             document.getElementById('point-count').textContent = '0';
             document.getElementById('face-count').textContent = '0';
@@ -969,21 +1166,38 @@
                 }
                 
                 detections.forEach((detection, index) => {
-                    // Create marker
-                    const geometry = new THREE.SphereGeometry(0.03, 16, 16);
-                    const material = new THREE.MeshBasicMaterial({ color: 0xff6600 });
+                    // Create marker - 大きめのオレンジ球体
+                    const geometry = new THREE.SphereGeometry(0.05, 16, 16);
+                    const material = new THREE.MeshBasicMaterial({ 
+                        color: 0xff6600,
+                        transparent: true,
+                        opacity: 0.9
+                    });
                     const marker = new THREE.Mesh(geometry, material);
                     
                     // 位置情報の取得（position または pose.position）
+                    // ARCore座標系で保存されているので、sceneCenterOffsetを適用
+                    let pos = { x: 0, y: 0, z: 0 };
                     if (detection.position) {
-                        marker.position.set(detection.position.x, detection.position.y, detection.position.z);
+                        pos = detection.position;
                     } else if (detection.pose && detection.pose.position) {
-                        marker.position.set(detection.pose.position.x, detection.pose.position.y, detection.pose.position.z);
+                        pos = detection.pose.position;
                     }
+                    
+                    // sceneCenterOffsetを適用（メッシュ/点群と同じ座標系に）
+                    marker.position.set(
+                        pos.x - sceneCenterOffset.x,
+                        pos.y - sceneCenterOffset.y,
+                        pos.z - sceneCenterOffset.z
+                    );
                     
                     marker.visible = false;
                     scene.add(marker);
                     rfidMarkers.push(marker);
+                    
+                    // Debug: RFID位置をコンソールに出力
+                    console.log(`RFID ${index}: original (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}) -> adjusted (${marker.position.x.toFixed(2)}, ${marker.position.y.toFixed(2)}, ${marker.position.z.toFixed(2)})`);
+                    console.log(`  sceneCenterOffset: (${sceneCenterOffset.x.toFixed(2)}, ${sceneCenterOffset.y.toFixed(2)}, ${sceneCenterOffset.z.toFixed(2)})`);
                     
                     // Add to list
                     const item = document.createElement('div');
@@ -1073,10 +1287,89 @@
                 document.getElementById('trajectory-count').textContent = poses.length.toString();
                 document.getElementById('btn-trajectory').disabled = false;
                 
-                console.log(`Trajectory loaded: ${poses.length} poses`);
+                console.log(`ARCore Trajectory loaded: ${poses.length} poses`);
                 
             } catch (error) {
-                console.error('Trajectory load error:', error);
+                console.error('ARCore Trajectory load error:', error);
+            }
+        }
+        
+        async function loadTrajectoryColmap(jobId) {
+            try {
+                const response = await fetch(`${API_BASE}/scenes/${jobId}/trajectory_colmap.json`);
+                if (!response.ok) {
+                    console.log('COLMAP trajectory not available');
+                    return;
+                }
+                const data = await response.json();
+                
+                const poses = data.poses || [];
+                
+                if (poses.length === 0) {
+                    return;
+                }
+                
+                // メッシュ読み込み時に保存した中心オフセットを使用
+                console.log(`Applying COLMAP trajectory offset: (${sceneCenterOffset.x.toFixed(3)}, ${sceneCenterOffset.y.toFixed(3)}, ${sceneCenterOffset.z.toFixed(3)})`);
+                
+                // 軌跡ラインを作成
+                const positions = [];
+                poses.forEach(pose => {
+                    const pos = pose.position || pose;
+                    positions.push(
+                        pos.x - sceneCenterOffset.x,
+                        pos.y - sceneCenterOffset.y,
+                        pos.z - sceneCenterOffset.z
+                    );
+                });
+                
+                const lineGeometry = new THREE.BufferGeometry();
+                lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                
+                // COLMAP軌跡はシアン色
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color: 0x00ffff,
+                    linewidth: 2
+                });
+                
+                trajectoryColmapLine = new THREE.Line(lineGeometry, lineMaterial);
+                trajectoryColmapLine.visible = false;
+                scene.add(trajectoryColmapLine);
+                
+                // 開始点と終了点にマーカーを追加
+                const startGeom = new THREE.SphereGeometry(0.025, 16, 16);
+                const startMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa }); // ターコイズ=開始
+                const startSphere = new THREE.Mesh(startGeom, startMat);
+                const firstPos = poses[0].position || poses[0];
+                startSphere.position.set(
+                    firstPos.x - sceneCenterOffset.x,
+                    firstPos.y - sceneCenterOffset.y,
+                    firstPos.z - sceneCenterOffset.z
+                );
+                startSphere.visible = false;
+                scene.add(startSphere);
+                trajectoryColmapSpheres.push(startSphere);
+                
+                const endGeom = new THREE.SphereGeometry(0.025, 16, 16);
+                const endMat = new THREE.MeshBasicMaterial({ color: 0xff00ff }); // マゼンタ=終了
+                const endSphere = new THREE.Mesh(endGeom, endMat);
+                const lastPose = poses[poses.length - 1];
+                const lastPos = lastPose.position || lastPose;
+                endSphere.position.set(
+                    lastPos.x - sceneCenterOffset.x,
+                    lastPos.y - sceneCenterOffset.y,
+                    lastPos.z - sceneCenterOffset.z
+                );
+                endSphere.visible = false;
+                scene.add(endSphere);
+                trajectoryColmapSpheres.push(endSphere);
+                
+                document.getElementById('btn-trajectory-colmap').disabled = false;
+                
+                console.log(`COLMAP Trajectory loaded: ${poses.length} poses (${data.coordinate_system})`);
+                
+            } catch (error) {
+                console.error('COLMAP Trajectory load error:', error);
                 document.getElementById('btn-trajectory').disabled = true;
             }
         }
@@ -1089,37 +1382,53 @@
             
             // Update buttons
             document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
-            document.getElementById(`btn-${mode}`).classList.add('active');
+            const btnId = mode === 'trajectory-colmap' ? 'btn-trajectory-colmap' : `btn-${mode}`;
+            const btn = document.getElementById(btnId);
+            if (btn) btn.classList.add('active');
             
-            // Update visibility
-            if (pointCloud) pointCloud.visible = (mode === 'pointcloud' || mode === 'rfid');
-            if (mesh) mesh.visible = (mode === 'mesh' || mode === 'rfid' || mode === 'trajectory');
-            rfidMarkers.forEach(m => m.visible = (mode === 'rfid'));
-            if (trajectoryLine) trajectoryLine.visible = (mode === 'trajectory');
-            trajectorySpheres.forEach(s => s.visible = (mode === 'trajectory'));
+            // デフォルトで全て非表示
+            if (pointCloud) pointCloud.visible = false;
+            if (mesh) mesh.visible = false;
+            rfidMarkers.forEach(m => m.visible = false);
+            if (trajectoryLine) trajectoryLine.visible = false;
+            trajectorySpheres.forEach(s => s.visible = false);
+            if (trajectoryColmapLine) trajectoryColmapLine.visible = false;
+            trajectoryColmapSpheres.forEach(s => s.visible = false);
             
-            // Show RFID with other modes if selected
-            if (mode === 'rfid') {
+            // モードに応じて表示
+            if (mode === 'pointcloud') {
+                if (pointCloud) pointCloud.visible = true;
+            } else if (mode === 'mesh') {
+                if (mesh) mesh.visible = true;
+            } else if (mode === 'rfid') {
                 if (pointCloud) pointCloud.visible = true;
                 if (mesh) mesh.visible = true;
                 rfidMarkers.forEach(m => m.visible = true);
-            }
-            
-            // Trajectory mode shows trajectory with mesh
-            if (mode === 'trajectory') {
+            } else if (mode === 'trajectory') {
+                // ARCore軌跡（黄色）
                 if (trajectoryLine) trajectoryLine.visible = true;
                 trajectorySpheres.forEach(s => s.visible = true);
                 if (mesh) mesh.visible = true;
-                rfidMarkers.forEach(m => m.visible = true); // RFIDも表示
+                rfidMarkers.forEach(m => m.visible = true);
+            } else if (mode === 'trajectory-colmap') {
+                // COLMAP軌跡（シアン）
+                if (trajectoryColmapLine) trajectoryColmapLine.visible = true;
+                trajectoryColmapSpheres.forEach(s => s.visible = true);
+                // ARCore軌跡も一緒に表示して比較
+                if (trajectoryLine) trajectoryLine.visible = true;
+                trajectorySpheres.forEach(s => s.visible = true);
+                if (mesh) mesh.visible = true;
             }
             
-            // メッシュモードの場合はカメラを調整
+            // カメラを調整
             if (mode === 'mesh' && mesh) {
                 fitCameraToObject(mesh);
             } else if (mode === 'pointcloud' && pointCloud) {
                 fitCameraToObject(pointCloud);
             } else if (mode === 'trajectory' && trajectoryLine) {
                 fitCameraToObject(trajectoryLine);
+            } else if (mode === 'trajectory-colmap' && trajectoryColmapLine) {
+                fitCameraToObject(trajectoryColmapLine);
             }
         }
         
@@ -1152,6 +1461,7 @@
         document.getElementById('btn-mesh').addEventListener('click', () => setDisplayMode('mesh'));
         document.getElementById('btn-rfid').addEventListener('click', () => setDisplayMode('rfid'));
         document.getElementById('btn-trajectory').addEventListener('click', () => setDisplayMode('trajectory'));
+        document.getElementById('btn-trajectory-colmap').addEventListener('click', () => setDisplayMode('trajectory-colmap'));
         
         // ============================================================
         // Initialize

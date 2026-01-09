@@ -400,6 +400,37 @@ async def delete_job(job_id: str):
         return {"status": "deleted"}
     raise HTTPException(404, "Job not found")
 
+@app.post("/api/v1/jobs/{job_id}/restart")
+async def restart_job(job_id: str, background_tasks: BackgroundTasks):
+    """queued/failedジョブを再処理"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    job = jobs[job_id]
+    if job["status"] == "processing":
+        raise HTTPException(400, f"Cannot restart job that is currently processing")
+    
+    session_dir = SESSIONS_DIR / job_id
+    if not session_dir.exists():
+        raise HTTPException(404, "Session data not found")
+    
+    # ステータスをリセット
+    jobs[job_id]["status"] = "queued"
+    jobs[job_id]["progress"] = 0
+    jobs[job_id]["message"] = "Restarting..."
+    jobs[job_id]["current_step"] = "queued"
+    if "error" in jobs[job_id]:
+        del jobs[job_id]["error"]
+    
+    # バックグラウンドで処理を開始
+    background_tasks.add_task(process_session, job_id, session_dir)
+    
+    return {
+        "status": "restarting",
+        "job_id": job_id,
+        "message": f"Processing restarted. Check status at /api/v1/jobs/{job_id}/status"
+    }
+
 # ============================================================
 # 結果ファイル配信
 # ============================================================
@@ -413,11 +444,22 @@ async def get_point_cloud(job_id: str):
     return FileResponse(path, media_type="application/octet-stream")
 
 @app.get("/scenes/{job_id}/mesh.ply")
-async def get_mesh(job_id: str):
+async def get_mesh(job_id: str, corrected: bool = False):
     """メッシュPLYファイル"""
-    path = RESULTS_DIR / job_id / "mesh.ply"
+    if corrected:
+        path = RESULTS_DIR / job_id / "mesh_corrected.ply"
+    else:
+        path = RESULTS_DIR / job_id / "mesh.ply"
     if not path.exists():
         raise HTTPException(404, "File not found")
+    return FileResponse(path, media_type="application/octet-stream")
+
+@app.get("/scenes/{job_id}/mesh_corrected.ply")
+async def get_mesh_corrected(job_id: str):
+    """補正済みメッシュPLYファイル"""
+    path = RESULTS_DIR / job_id / "mesh_corrected.ply"
+    if not path.exists():
+        raise HTTPException(404, "Corrected mesh not found")
     return FileResponse(path, media_type="application/octet-stream")
 
 @app.get("/scenes/{job_id}/rfid_positions.json")
@@ -426,6 +468,24 @@ async def get_rfid(job_id: str):
     path = RESULTS_DIR / job_id / "rfid_positions.json"
     if not path.exists():
         raise HTTPException(404, "File not found")
+    return FileResponse(path)
+
+@app.get("/sessions/{job_id}/images/{image_name}")
+async def get_session_image(job_id: str, image_name: str):
+    """セッション画像を取得"""
+    path = SESSIONS_DIR / job_id / "images" / image_name
+    print(f"[DEBUG] Session image request: {path}, exists: {path.exists()}")
+    if not path.exists():
+        raise HTTPException(404, f"Image not found: {path}")
+    return FileResponse(path, media_type="image/jpeg")
+
+@app.get("/scenes/{job_id}/trajectory_colmap.json")
+async def get_trajectory_colmap(job_id: str):
+    """COLMAP軌跡JSON（ARCore座標系に変換済み）"""
+    path = RESULTS_DIR / job_id / "trajectory_colmap_transformed.json"
+    if not path.exists():
+        # 未生成の場合は404
+        raise HTTPException(404, "COLMAP trajectory not found")
     return FileResponse(path)
 
 @app.get("/scenes/{job_id}/trajectory.json")

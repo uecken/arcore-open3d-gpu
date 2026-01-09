@@ -90,12 +90,108 @@ class COLMAPMVSPipeline:
         
         return np.array(camera_positions)
     
+    def _find_largest_sparse_model(self, sparse_dir: Path) -> str:
+        """最大のsparseモデルを見つける（画像数が最も多いもの）"""
+        if not sparse_dir.exists():
+            return "0"
+        
+        largest_model = "0"
+        largest_size = 0
+        
+        for model_dir in sparse_dir.iterdir():
+            if model_dir.is_dir() and model_dir.name.isdigit():
+                # .bin または .txt ファイルを探す
+                images_file = model_dir / "images.bin"
+                if not images_file.exists():
+                    images_file = model_dir / "images.txt"
+                
+                if images_file.exists():
+                    size = images_file.stat().st_size
+                    if size > largest_size:
+                        largest_size = size
+                        largest_model = model_dir.name
+        
+        if largest_model != "0":
+            print(f"  Using largest sparse model: {largest_model} ({largest_size:,} bytes)")
+        
+        return largest_model
+    
+    def _read_colmap_images(self, model_dir: Path) -> dict:
+        """COLMAPのimages.bin または images.txt からカメラ位置を読み込む"""
+        import struct
+        
+        colmap_data = {}
+        
+        # まず .bin ファイルを試す
+        images_bin = model_dir / "images.bin"
+        if images_bin.exists():
+            with open(images_bin, "rb") as f:
+                num = struct.unpack("Q", f.read(8))[0]
+                for _ in range(num):
+                    image_id = struct.unpack("I", f.read(4))[0]
+                    qw, qx, qy, qz = struct.unpack("dddd", f.read(32))
+                    tx, ty, tz = struct.unpack("ddd", f.read(24))
+                    camera_id = struct.unpack("I", f.read(4))[0]
+                    name = b""
+                    while True:
+                        char = f.read(1)
+                        if char == b"\x00": break
+                        name += char
+                    num_pts = struct.unpack("Q", f.read(8))[0]
+                    f.read(24 * num_pts)
+                    
+                    R = np.array([
+                        [1 - 2*(qy**2 + qz**2), 2*(qx*qy - qz*qw), 2*(qx*qz + qy*qw)],
+                        [2*(qx*qy + qz*qw), 1 - 2*(qx**2 + qz**2), 2*(qy*qz - qx*qw)],
+                        [2*(qx*qz - qy*qw), 2*(qy*qz + qx*qw), 1 - 2*(qx**2 + qy**2)]
+                    ])
+                    t = np.array([tx, ty, tz])
+                    colmap_data[name.decode()] = -R.T @ t
+            return colmap_data
+        
+        # .txt ファイルを試す
+        images_txt = model_dir / "images.txt"
+        if images_txt.exists():
+            with open(images_txt, 'r') as f:
+                lines = f.readlines()
+            
+            i = 0
+            while i < len(lines):
+                line = lines[i].strip()
+                if line.startswith('#') or not line:
+                    i += 1
+                    continue
+                
+                # IMAGE_ID QW QX QY QZ TX TY TZ CAMERA_ID NAME
+                parts = line.split()
+                if len(parts) >= 10:
+                    qw, qx, qy, qz = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
+                    tx, ty, tz = float(parts[5]), float(parts[6]), float(parts[7])
+                    name = parts[9]
+                    
+                    R = np.array([
+                        [1 - 2*(qy**2 + qz**2), 2*(qx*qy - qz*qw), 2*(qx*qz + qy*qw)],
+                        [2*(qx*qy + qz*qw), 1 - 2*(qx**2 + qz**2), 2*(qy*qz - qx*qw)],
+                        [2*(qx*qz - qy*qw), 2*(qy*qz + qx*qw), 1 - 2*(qx**2 + qy**2)]
+                    ])
+                    t = np.array([tx, ty, tz])
+                    colmap_data[name] = -R.T @ t
+                    
+                    # 次の行（POINTS2D）をスキップ
+                    i += 2
+                else:
+                    i += 1
+            
+            return colmap_data
+        
+        return None
+    
     def _compute_colmap_to_arcore_transform(
         self, 
         parser: ARCoreDataParser, 
         colmap_dir: Path
     ) -> dict:
-        """COLMAP→ARCore座標変換パラメータを計算"""
+        """COLMAP→ARCore座標変換パラメータを計算（ドリフト耐性あり）"""
         import struct
         from scipy.linalg import orthogonal_procrustes
         
@@ -107,35 +203,14 @@ class COLMAPMVSPipeline:
                 position = pose_matrix[:3, 3]
                 arcore_data[frame.image_path.name] = position
         
-        # COLMAPカメラ位置を取得
-        images_bin = colmap_dir / "sparse" / "0" / "images.bin"
-        if not images_bin.exists():
-            print("Warning: COLMAP images.bin not found")
-            return None
+        # COLMAPカメラ位置を取得（最大モデルを使用）
+        sparse_dir = colmap_dir / "sparse"
+        model_id = self._find_largest_sparse_model(sparse_dir)
+        colmap_data = self._read_colmap_images(sparse_dir / model_id)
         
-        colmap_data = {}
-        with open(images_bin, "rb") as f:
-            num = struct.unpack("Q", f.read(8))[0]
-            for _ in range(num):
-                image_id = struct.unpack("I", f.read(4))[0]
-                qw, qx, qy, qz = struct.unpack("dddd", f.read(32))
-                tx, ty, tz = struct.unpack("ddd", f.read(24))
-                camera_id = struct.unpack("I", f.read(4))[0]
-                name = b""
-                while True:
-                    char = f.read(1)
-                    if char == b"\x00": break
-                    name += char
-                num_pts = struct.unpack("Q", f.read(8))[0]
-                f.read(24 * num_pts)
-                
-                R = np.array([
-                    [1 - 2*(qy**2 + qz**2), 2*(qx*qy - qz*qw), 2*(qx*qz + qy*qw)],
-                    [2*(qx*qy + qz*qw), 1 - 2*(qx**2 + qz**2), 2*(qy*qz - qx*qw)],
-                    [2*(qx*qz - qy*qw), 2*(qy*qz + qx*qw), 1 - 2*(qx**2 + qy**2)]
-                ])
-                t = np.array([tx, ty, tz])
-                colmap_data[name.decode()] = -R.T @ t
+        if colmap_data is None or len(colmap_data) == 0:
+            print("Warning: No COLMAP images found")
+            return None
         
         # 共通画像でProcrustes分析
         common_images = sorted(set(arcore_data.keys()) & set(colmap_data.keys()))
@@ -146,31 +221,89 @@ class COLMAPMVSPipeline:
         arcore_pts = np.array([arcore_data[img] for img in common_images])
         colmap_pts = np.array([colmap_data[img] for img in common_images])
         
-        # 中心化
-        arcore_centroid = arcore_pts.mean(axis=0)
-        colmap_centroid = colmap_pts.mean(axis=0)
+        def compute_procrustes(src_pts, tgt_pts):
+            """Procrustes分析でscale, R, centroids を計算"""
+            src_centroid = src_pts.mean(axis=0)
+            tgt_centroid = tgt_pts.mean(axis=0)
+            
+            src_centered = src_pts - src_centroid
+            tgt_centered = tgt_pts - tgt_centroid
+            
+            src_scale = np.sqrt((src_centered ** 2).sum())
+            tgt_scale = np.sqrt((tgt_centered ** 2).sum())
+            scale = tgt_scale / src_scale
+            
+            src_normalized = src_centered / src_scale
+            tgt_normalized = tgt_centered / tgt_scale
+            R, _ = orthogonal_procrustes(src_normalized, tgt_normalized)
+            
+            return scale, R, src_centroid, tgt_centroid
         
-        arcore_centered = arcore_pts - arcore_centroid
-        colmap_centered = colmap_pts - colmap_centroid
+        def apply_transform(pts, scale, R, src_c, tgt_c):
+            return scale * ((pts - src_c) @ R) + tgt_c
         
-        # スケール
-        arcore_scale = np.sqrt((arcore_centered ** 2).sum())
-        colmap_scale = np.sqrt((colmap_centered ** 2).sum())
-        scale = arcore_scale / colmap_scale
+        # 初回: 全データでProcrustes
+        scale, R, colmap_centroid, arcore_centroid = compute_procrustes(colmap_pts, arcore_pts)
+        transformed = apply_transform(colmap_pts, scale, R, colmap_centroid, arcore_centroid)
+        errors = np.linalg.norm(transformed - arcore_pts, axis=1)
         
-        # 回転行列
-        from scipy.linalg import orthogonal_procrustes
-        arcore_normalized = arcore_centered / arcore_scale
-        colmap_normalized = colmap_centered / colmap_scale
-        R, _ = orthogonal_procrustes(colmap_normalized, arcore_normalized)
+        initial_mean_error = errors.mean()
+        print(f"  Initial transform: scale={scale:.4f}, mean_error={initial_mean_error:.4f}m")
         
-        print(f"  Coordinate transform: scale={scale:.4f}, {len(common_images)} points")
+        # 反復的外れ値除去（RANSAC風）
+        max_iterations = 3
+        for iteration in range(max_iterations):
+            # 誤差の75パーセンタイル以下をinlierとする
+            threshold = np.percentile(errors, 75)
+            inliers = errors < threshold
+            inlier_count = inliers.sum()
+            
+            if inlier_count < 10:
+                print(f"  Warning: Too few inliers ({inlier_count}), stopping refinement")
+                break
+            
+            # inlierのみで再計算
+            scale, R, colmap_centroid, arcore_centroid = compute_procrustes(
+                colmap_pts[inliers], arcore_pts[inliers]
+            )
+            transformed = apply_transform(colmap_pts, scale, R, colmap_centroid, arcore_centroid)
+            errors = np.linalg.norm(transformed - arcore_pts, axis=1)
+            
+            new_mean_error = errors.mean()
+            if iteration > 0:
+                print(f"  Refinement {iteration+1}: inliers={inlier_count}, mean_error={new_mean_error:.4f}m")
+            
+            # 改善が小さくなったら終了
+            if abs(initial_mean_error - new_mean_error) < 0.01:
+                break
+            initial_mean_error = new_mean_error
+        
+        # 最終誤差を報告
+        final_mean_error = errors.mean()
+        final_median_error = np.median(errors)
+        print(f"  Final transform: scale={scale:.4f}, mean_error={final_mean_error:.4f}m, median={final_median_error:.4f}m")
+        
+        # ドリフト警告
+        n_bins = 4
+        bin_size = len(common_images) // n_bins
+        drift_detected = False
+        for i in range(n_bins):
+            start = i * bin_size
+            end = (i + 1) * bin_size if i < n_bins - 1 else len(common_images)
+            bin_error = errors[start:end].mean()
+            if i == n_bins - 1 and bin_error > final_mean_error * 1.5:
+                drift_detected = True
+        
+        if drift_detected:
+            print(f"  ⚠️ Warning: Temporal drift detected. Later frames have higher error.")
         
         return {
             'scale': scale,
             'rotation': R,
             'colmap_centroid': colmap_centroid,
-            'arcore_centroid': arcore_centroid
+            'arcore_centroid': arcore_centroid,
+            'mean_error': final_mean_error,
+            'median_error': final_median_error
         }
     
     def _transform_points_to_arcore(self, points: np.ndarray, transform: dict) -> np.ndarray:
@@ -236,19 +369,24 @@ class COLMAPMVSPipeline:
         camera_params = f"{intrinsics.fx},{intrinsics.fy},{intrinsics.cx},{intrinsics.cy}"
         
         try:
+            # GPUオプション（正しいオプション名: FeatureExtraction.use_gpu）
+            gpu_options = []
+            if self.use_gpu:
+                gpu_options = [
+                    "--FeatureExtraction.use_gpu", "1",
+                    "--FeatureExtraction.gpu_index", "0",
+                ]
+                print("  Using GPU for feature extraction")
+            
             cmd = [
                 self.colmap_path, "feature_extractor",
                 "--database_path", str(database_path),
                 "--image_path", str(images_dir),
                 "--ImageReader.camera_model", "PINHOLE",
                 "--ImageReader.camera_params", camera_params,
-                "--SiftExtraction.max_num_features", "8192"  # デフォルト値（調整可能）
+                "--SiftExtraction.max_num_features", "8192",
+                *gpu_options
             ]
-            # GPUオプションはバージョンによって異なる可能性があるため、条件付きで追加
-            if self.use_gpu:
-                # CUDA対応版ではGPUが自動的に使用される可能性がある
-                # オプションが存在しない場合はエラーになるため、試行錯誤が必要
-                pass
             
             result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=3600)
             
@@ -275,24 +413,169 @@ class COLMAPMVSPipeline:
         env["QT_QPA_PLATFORM"] = "offscreen"
         
         try:
+            # GPUオプション（正しいオプション名: FeatureMatching.use_gpu）
+            gpu_options = []
+            if self.use_gpu:
+                gpu_options = [
+                    "--FeatureMatching.use_gpu", "1",
+                    "--FeatureMatching.gpu_index", "0",
+                ]
+                print("  Using GPU for feature matching")
+            
             cmd = [
                 self.colmap_path, "exhaustive_matcher",
-                "--database_path", str(database_path)
+                "--database_path", str(database_path),
+                *gpu_options
             ]
-            # CUDA対応版ではGPUが自動的に使用される
-            # オプションは最小限に（バージョン依存の問題を回避）
             
-            result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=7200)
+            # リアルタイム進捗表示のためにPopenを使用
+            import re
+            process = subprocess.Popen(
+                cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.STDOUT,
+                text=True, 
+                env=env,
+                bufsize=1
+            )
             
-            if result.returncode != 0:
-                print(f"Error: exhaustive_matcher failed: {result.stderr}")
+            last_progress = 8
+            total_pairs = None
+            matched_pairs = 0
+            
+            for line in process.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 進捗パターンを検出: "Matching block [X/Y]" または "Matching image pairs"
+                block_match = re.search(r'Matching block \[(\d+)/(\d+)\]', line)
+                if block_match:
+                    current = int(block_match.group(1))
+                    total = int(block_match.group(2))
+                    # 8-10%の範囲で進捗を計算
+                    progress = 8 + int((current / total) * 2)
+                    if progress > last_progress and progress_callback:
+                        progress_callback(progress, f"Feature matching: block {current}/{total}")
+                        last_progress = progress
+                        print(f"  Feature matching: block {current}/{total}")
+                
+                # 画像ペアマッチング進捗
+                pair_match = re.search(r'Matching image #(\d+)', line)
+                if pair_match:
+                    img_num = int(pair_match.group(1))
+                    if img_num % 50 == 0:  # 50枚ごとに更新
+                        print(f"  Matching image #{img_num}")
+            
+            process.wait()
+            
+            if process.returncode != 0:
+                print(f"Error: exhaustive_matcher failed (exit code {process.returncode})")
                 return False
             
-            print("✓ Features matched")
+            print("✓ Features matched (exhaustive)")
+            if progress_callback:
+                progress_callback(10, "Feature matching completed")
             return True
+        except subprocess.TimeoutExpired:
+            print("Error: exhaustive_matcher timed out (>2 hours)")
+            process.kill()
+            return False
         except Exception as e:
             print(f"Error running exhaustive_matcher: {e}")
             return False
+    
+    def run_sequential_matcher(
+        self,
+        database_path: Path,
+        progress_callback: Callable[[int, str], None] = None
+    ) -> bool:
+        """COLMAPのsequential matcherを実行（隣接画像のみマッチング、高速）"""
+        if progress_callback:
+            progress_callback(8, "Matching features (sequential)...")
+        
+        env = os.environ.copy()
+        env["QT_QPA_PLATFORM"] = "offscreen"
+        
+        try:
+            # 設定を取得
+            colmap_config = self.config.get('colmap', {})
+            seq_config = colmap_config.get('sequential_matching', {})
+            overlap = seq_config.get('overlap', 10)
+            quadratic_overlap = seq_config.get('quadratic_overlap', True)
+            loop_detection = seq_config.get('loop_detection', False)
+            
+            # GPUオプション
+            gpu_options = []
+            if self.use_gpu:
+                gpu_options = [
+                    "--SiftMatching.use_gpu", "1",
+                    "--SiftMatching.gpu_index", "0",
+                ]
+                print("  Using GPU for feature matching")
+            
+            cmd = [
+                self.colmap_path, "sequential_matcher",
+                "--database_path", str(database_path),
+                "--SequentialMatching.overlap", str(overlap),
+                "--SequentialMatching.quadratic_overlap", "1" if quadratic_overlap else "0",
+                "--SequentialMatching.loop_detection", "1" if loop_detection else "0",
+                *gpu_options
+            ]
+            
+            print(f"  Sequential matcher: overlap={overlap}, quadratic={quadratic_overlap}")
+            
+            import re
+            process = subprocess.Popen(
+                cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.STDOUT,
+                text=True, 
+                env=env,
+                bufsize=1
+            )
+            
+            for line in process.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                # 進捗出力（デバッグ用）
+                if "Matching" in line and "image" in line.lower():
+                    print(f"  {line[:60]}")
+            
+            process.wait()
+            
+            if process.returncode != 0:
+                print(f"Error: sequential_matcher failed (exit code {process.returncode})")
+                return False
+            
+            print("✓ Features matched (sequential)")
+            if progress_callback:
+                progress_callback(10, "Feature matching completed")
+            return True
+        except subprocess.TimeoutExpired:
+            print("Error: sequential_matcher timed out")
+            process.kill()
+            return False
+        except Exception as e:
+            print(f"Error running sequential_matcher: {e}")
+            return False
+    
+    def run_feature_matcher(
+        self,
+        database_path: Path,
+        progress_callback: Callable[[int, str], None] = None
+    ) -> bool:
+        """設定に応じたmatcherを実行"""
+        colmap_config = self.config.get('colmap', {})
+        matcher_type = colmap_config.get('matcher', 'exhaustive')
+        
+        print(f"  Matcher type: {matcher_type}")
+        
+        if matcher_type == 'sequential':
+            return self.run_sequential_matcher(database_path, progress_callback)
+        else:
+            return self.run_exhaustive_matcher(database_path, progress_callback)
     
     def run_mapper(
         self,
@@ -313,24 +596,85 @@ class COLMAPMVSPipeline:
         env["QT_QPA_PLATFORM"] = "offscreen"
         
         try:
-            result = subprocess.run([
+            import re
+            import os as os_module
+            
+            # CPUスレッド数を取得（利用可能なコア数）
+            num_threads = os_module.cpu_count() or 4
+            
+            # GPU/マルチスレッドオプションを追加
+            gpu_options = []
+            if self.use_gpu:
+                gpu_options = [
+                    "--Mapper.ba_use_gpu", "1",  # Bundle AdjustmentにGPUを使用
+                    "--Mapper.ba_gpu_index", "0",
+                ]
+                print(f"  Using GPU for Bundle Adjustment")
+            
+            cmd = [
                 self.colmap_path, "mapper",
                 "--database_path", str(database_path),
                 "--image_path", str(images_dir),
-                "--output_path", str(sparse_dir)
-            ], capture_output=True, text=True, env=env, timeout=7200)
+                "--output_path", str(sparse_dir),
+                "--Mapper.num_threads", str(num_threads),  # マルチスレッド
+                *gpu_options
+            ]
+            print(f"  Using {num_threads} CPU threads for mapper")
             
-            if result.returncode != 0:
-                print(f"Error: mapper failed: {result.stderr}")
+            # リアルタイム進捗表示のためにPopenを使用
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+                bufsize=1
+            )
+            
+            last_progress = 10
+            registered_images = 0
+            
+            for line in process.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 登録済み画像数: "Registering image #X (Y)"
+                reg_match = re.search(r'Registering image #(\d+)', line)
+                if reg_match:
+                    registered_images = int(reg_match.group(1))
+                    # 10-30%の範囲で進捗を計算（推定）
+                    # 画像枚数が不明なので、最大1000枚と仮定
+                    progress = 10 + min(int(registered_images / 50), 20)
+                    if progress > last_progress and progress_callback:
+                        progress_callback(progress, f"SfM: {registered_images} images registered")
+                        last_progress = progress
+                    if registered_images % 50 == 0:
+                        print(f"  SfM: {registered_images} images registered")
+                
+                # バンドル調整: "Bundle adjustment"
+                if "Bundle adjustment" in line:
+                    if progress_callback:
+                        progress_callback(25, "Bundle adjustment...")
+                    print("  Bundle adjustment...")
+            
+            process.wait()
+            
+            if process.returncode != 0:
+                print(f"Error: mapper failed (exit code {process.returncode})")
                 return False
             
-            # sparse/0が存在するか確認
-            if not (sparse_dir / "0").exists():
-                print("Error: mapper did not create sparse/0")
+            # sparseモデルが存在するか確認
+            model_dirs = [d for d in sparse_dir.iterdir() if d.is_dir() and d.name.isdigit()]
+            if not model_dirs:
+                print("Error: mapper did not create any sparse model")
                 return False
+            
+            # 最大モデルを特定
+            largest_model = self._find_largest_sparse_model(sparse_dir)
             
             # 3D点の数を確認
-            points_file = sparse_dir / "0" / "points3D.bin"
+            points_file = sparse_dir / largest_model / "points3D.bin"
             if points_file.exists():
                 print(f"✓ COLMAP mapper completed (sparse reconstruction created)")
             else:
@@ -339,6 +683,7 @@ class COLMAPMVSPipeline:
             return True
         except subprocess.TimeoutExpired:
             print("Error: mapper timed out (>2 hours)")
+            process.kill()
             return False
         except Exception as e:
             print(f"Error running mapper: {e}")
@@ -533,7 +878,10 @@ class COLMAPMVSPipeline:
             progress_callback(30, "Undistorting images...")
         
         images_dir = session_dir / "images"
-        sparse_dir = colmap_dir / "sparse" / "0"
+        # 最大のsparseモデルを使用
+        sparse_base = colmap_dir / "sparse"
+        model_id = self._find_largest_sparse_model(sparse_base)
+        sparse_dir = sparse_base / model_id
         dense_dir = colmap_dir / "dense"
         dense_dir.mkdir(parents=True, exist_ok=True)
         
@@ -607,20 +955,55 @@ class COLMAPMVSPipeline:
                 "--PatchMatchStereo.cache_size", str(self.cache_size),
             ]
             
-            result = subprocess.run([
+            import re
+            cmd = [
                 self.colmap_path, "patch_match_stereo",
                 "--workspace_path", str(workspace_path),
                 "--workspace_format", "COLMAP",
                 "--PatchMatchStereo.geom_consistency", "true",
-                "--PatchMatchStereo.filter", "true",  # フィルタリングを有効化（必須）
+                "--PatchMatchStereo.filter", "true",
                 "--PatchMatchStereo.num_iterations", str(self.patch_match_iterations),
                 *gpu_options,
                 *depth_options,
                 *memory_options
-            ], capture_output=True, text=True, env=env, timeout=7200)
+            ]
             
-            if result.returncode != 0:
-                print(f"Error: patch_match_stereo failed: {result.stderr}")
+            # リアルタイム進捗表示のためにPopenを使用
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+                bufsize=1
+            )
+            
+            last_progress = 50
+            total_images = None
+            
+            for line in process.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 画像処理進捗: "Processing view X / Y"
+                view_match = re.search(r'Processing view (\d+) / (\d+)', line)
+                if view_match:
+                    current = int(view_match.group(1))
+                    total = int(view_match.group(2))
+                    total_images = total
+                    # 50-80%の範囲で進捗を計算
+                    progress = 50 + int((current / total) * 30)
+                    if progress > last_progress and progress_callback:
+                        progress_callback(progress, f"Patch Match: {current}/{total} images")
+                        last_progress = progress
+                    if current % 20 == 0 or current == total:
+                        print(f"  Patch Match: {current}/{total} images")
+            
+            process.wait()
+            
+            if process.returncode != 0:
+                print(f"Error: patch_match_stereo failed (exit code {process.returncode})")
                 return False
             
             print("✓ Patch Match Stereo completed")
@@ -731,21 +1114,61 @@ class COLMAPMVSPipeline:
         colmap_dir.mkdir(parents=True, exist_ok=True)
         database_path = colmap_dir / "database.db"
         
-        # Step 1: 特徴点抽出
-        if not self.run_feature_extractor(session_dir, database_path, parser.intrinsics, progress_callback):
-            return None, None
+        # ARCoreポーズ直接使用モードの確認
+        colmap_config = self.config.get('colmap', {})
+        use_arcore_poses = colmap_config.get('use_arcore_poses', False)
         
-        # Step 2: 特徴点マッチング
-        if not self.run_exhaustive_matcher(database_path, progress_callback):
-            return None, None
-        
-        # Step 3: COLMAPのmapperを実行してsparse reconstructionを構築
-        # ARCoreポーズは使用せず、完全なSfMを実行して3D点を生成
-        if not self.run_mapper(session_dir, colmap_dir, progress_callback):
-            print("Warning: COLMAP mapper failed, trying with ARCore poses...")
-            # フォールバック: ARCoreポーズを使用
-            if not self.create_colmap_model_from_arcore_poses(parser, colmap_dir, progress_callback):
+        if use_arcore_poses:
+            # ARCoreポーズを直接使用（SfMスキップモード）
+            print("\n=== ARCore Poses Mode ===")
+            print("  Using ARCore VIO poses directly (skipping COLMAP SfM)")
+            
+            # Step 1: 特徴点抽出（Patch Match Stereoに必要）
+            if not self.run_feature_extractor(session_dir, database_path, parser.intrinsics, progress_callback):
                 return None, None
+            
+            # Step 2: 特徴点マッチング（3D点の三角測量に必要）
+            if progress_callback:
+                progress_callback(8, "Matching features for triangulation...")
+            if not self.run_feature_matcher(database_path, progress_callback):
+                return None, None
+            
+            # Step 3: ARCoreポーズからCOLMAPモデルを作成
+            if progress_callback:
+                progress_callback(12, "Creating COLMAP model from ARCore poses...")
+            if not self.create_colmap_model_from_arcore_poses(parser, colmap_dir, progress_callback):
+                print("Error: Failed to create COLMAP model from ARCore poses")
+                return None, None
+            
+            print("  ✓ ARCore poses converted to COLMAP format")
+            
+            # Step 4: 3D点を三角測量（Patch Match Stereoのdepth range推定に必要）
+            if progress_callback:
+                progress_callback(15, "Triangulating 3D points...")
+            if not self.run_point_triangulator(colmap_dir, database_path, session_dir, progress_callback):
+                print("Warning: Point triangulation failed, Patch Match Stereo may not work correctly")
+            else:
+                print("  ✓ 3D points triangulated")
+        else:
+            # 通常のSfMモード
+            print("\n=== COLMAP SfM Mode ===")
+            print("  Running full SfM (Structure from Motion)")
+            
+            # Step 1: 特徴点抽出
+            if not self.run_feature_extractor(session_dir, database_path, parser.intrinsics, progress_callback):
+                return None, None
+            
+            # Step 2: 特徴点マッチング（config.yamlのmatcher設定に従う）
+            if not self.run_feature_matcher(database_path, progress_callback):
+                return None, None
+            
+            # Step 3: COLMAPのmapperを実行してsparse reconstructionを構築
+            # ARCoreポーズは使用せず、完全なSfMを実行して3D点を生成
+            if not self.run_mapper(session_dir, colmap_dir, progress_callback):
+                print("Warning: COLMAP mapper failed, trying with ARCore poses...")
+                # フォールバック: ARCoreポーズを使用
+                if not self.create_colmap_model_from_arcore_poses(parser, colmap_dir, progress_callback):
+                    return None, None
         
         # Step 6: 画像の歪み補正
         if not self.run_image_undistorter(session_dir, colmap_dir, progress_callback):

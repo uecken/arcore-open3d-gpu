@@ -7,7 +7,7 @@ server:
   results_dir: "/opt/arcore-open3d-gpu/results"
 
 processing:
-  default_mode: "rgbd"  # RGBDモード（ARCore Depth優先）
+  default_mode: "mvs"  # MVSモード（COLMAP使用）
   
   tsdf:
     voxel_length: 0.01  # 10mm (高密度、backupと同等)
@@ -83,15 +83,34 @@ depth_estimation:
 
 colmap:
   path: "colmap"
+  
+  # SfMスキップモード（実験的）
+  # true: ARCoreのポーズを直接使用（SfMをスキップ）- 現在未対応
+  # false: COLMAPのSfMでポーズを算出（推奨）
+  use_arcore_poses: false
+  
+  # マッチング方式（"exhaustive" または "sequential"）
+  # - exhaustive: 全画像ペアをマッチング（高精度だが低速）
+  # - sequential: 隣接画像のみマッチング（高速、ARCore連続撮影に最適）
+  # 注意: use_arcore_poses=true の場合、マッチングはスキップされます
+  matcher: "exhaustive"
+  
+  # sequential_matcher設定
+  sequential_matching:
+    overlap: 10           # 前後何枚の画像とマッチングするか
+    quadratic_overlap: true  # 二次的オーバーラップ
+    loop_detection: false    # ループ検出（大規模シーン向け）
+  
   patch_match_iterations: 3
   fusion_min_num_pixels: 5
   max_image_size: 2400
   window_radius: 5
   cache_size: 16
+  
   # 距離フィルタリング（カメラ位置からの距離でフィルタ）
-  # Patch Match Stereoの depth_min/max に適用される
+  # 注意: 座標変換が不正確な場合、フィルタが過剰に点を削除する可能性あり
   distance_filter:
-    enable: true
+    enable: false  # 一時的に無効化（座標変換の精度改善後に再有効化）
     min_distance: 0.1   # カメラから0.1m未満は除外（近すぎるノイズ）
     max_distance: 3.0   # カメラから3.0m以上は除外（遠すぎる誤差大）
 

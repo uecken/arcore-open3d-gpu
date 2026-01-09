@@ -251,9 +251,103 @@ async function loadTrajectory(jobId) {
 2. 共通画像数が十分（10枚以上）あることを確認
 3. ARCoreポーズの品質を確認
 
+## COLMAP ↔ ARCore ポーズ紐づけの詳細
+
+### 紐づけの仕組み
+
+COLMAPとARCoreのカメラポーズは、**画像ファイル名**で紐づけられます。
+
+```
+ARCoreデータ                          COLMAPデータ
+─────────────────────────────────────────────────────────────
+ARCore_sensor_pose.txt                colmap/sparse/0/images.bin
+─────────────────────────────────────────────────────────────
+frame_176359940065365.jpg             frame_176359940065365.jpg
+  → ARCore pose (tx, ty, tz, qw...)     → COLMAP pose (tx', ty', tz', qw'...)
+frame_176360140068874.jpg             frame_176360140068874.jpg
+  → ARCore pose                          → COLMAP pose
+...                                    ...
+─────────────────────────────────────────────────────────────
+```
+
+### 変換パラメータの計算
+
+`_compute_colmap_to_arcore_transform()` 関数で計算：
+
+1. **共通画像の特定**: 両座標系に存在する画像を特定
+2. **カメラ位置抽出**: 各画像のカメラ位置を抽出
+3. **Procrustes分析**: 以下を計算
+   - **スケール**: `scale = arcore_scale / colmap_scale`
+   - **回転行列**: `R = orthogonal_procrustes(colmap_normalized, arcore_normalized)`
+   - **並進**: `colmap_centroid`, `arcore_centroid`
+
+```python
+# 変換式
+p_arcore = scale * R @ (p_colmap - colmap_centroid) + arcore_centroid
+```
+
+### 変換パラメータの保存
+
+変換パラメータは `colmap_to_arcore_transform.json` に保存：
+
+```json
+{
+    "scale": 0.4123,
+    "rotation": [[...], [...], [...]],
+    "colmap_centroid": [-0.129, -0.074, 0.034],
+    "arcore_centroid": [2.083, 0.014, -0.079]
+}
+```
+
+### RFIDタグの座標について
+
+**重要**: RFIDタグの位置は**変換不要**です。
+
+```
+RFIDタグ検出時:
+─────────────────────────────────────────────────
+Android端末 → ARCore VIO → RFIDタグ位置 (ARCore座標系)
+                          └─→ rfid_detections.json に保存
+```
+
+RFIDは最初からARCore座標系で記録されているため、
+COLMAPで生成した点群/メッシュを**ARCore座標系に変換**することで、
+両者が同じ座標系で表示されます。
+
+```
+最終結果（すべてARCore座標系）:
+─────────────────────────────────────────────────
+mesh.ply          : COLMAP → ARCore変換済み
+point_cloud.ply   : COLMAP → ARCore変換済み
+trajectory.json   : ARCore座標系（元々）
+rfid_positions.json: ARCore座標系（元々）
+```
+
+### Viewerでの表示オフセット
+
+Viewerでは、すべてのデータに同じ `sceneCenterOffset` を適用：
+
+```javascript
+// viewer.html での処理
+const sceneCenterOffset = meshBoundingBox.getCenter();
+
+// メッシュ
+mesh.position.sub(sceneCenterOffset);
+
+// 軌跡
+trajectory.forEach(p => p.sub(sceneCenterOffset));
+
+// RFID
+rfidMarker.position.sub(sceneCenterOffset);
+```
+
+これにより、グリッドの中心に全データが統一表示されます。
+
 ## 参考情報
 
 - ARCore座標系: https://developers.google.com/ar/reference/java/arcore/reference/com/google/ar/core/Frame
 - COLMAP: https://colmap.github.io/
 - Procrustes分析: https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.orthogonal_procrustes.html
 
+---
+最終更新: 2026-01-09
