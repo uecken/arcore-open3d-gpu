@@ -370,30 +370,30 @@
             display: none;
         }
         
-        /* Progress bar */
-        .progress-container {
-            width: 300px;
-            margin-top: 20px;
-        }
-        
-        .progress-bar {
-            width: 100%;
-            height: 6px;
-            background: rgba(0, 200, 150, 0.2);
-            border-radius: 3px;
-            overflow: hidden;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #00c896, #00aaff);
-            border-radius: 3px;
-            transition: width 0.3s ease;
-        }
-        
-        .progress-text {
-            margin-top: 8px;
+        /* Controls help */
+        .controls-help {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(20, 20, 30, 0.8);
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-size: 10px;
             color: #666;
+            z-index: 50;
+        }
+        
+        .controls-help kbd {
+            background: rgba(60, 60, 80, 0.5);
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
         <!-- Row 1: Logo, Job selector, Stats -->
         <div class="header-row1">
             <div class="logo">Open3D <span>Viewer</span></div>
@@ -451,83 +451,6 @@
                 <button id="apply-rotation" class="rot-btn apply">適用</button>
                 <button id="reset-rotation" class="rot-btn reset">リセット</button>
             </div>
-            background: rgba(20, 20, 30, 0.8);
-            padding: 10px 15px;
-            border-radius: 4px;
-            font-size: 10px;
-            color: #666;
-            z-index: 50;
-        }
-        
-        .controls-help kbd {
-            background: rgba(60, 60, 80, 0.5);
-            padding: 2px 6px;
-            border-radius: 3px;
-            color: #aaa;
-        }
-    </style>
-</head>
-<body>
-    <!-- Header -->
-    <header class="header">
-        <div class="logo">Open3D <span>Viewer</span></div>
-        
-        <div class="job-selector">
-            <label>JOB:</label>
-            <select id="job-select">
-                <option value="">-- Select a job --</option>
-            </select>
-        </div>
-        
-        <div class="view-controls">
-            <button id="btn-pointcloud" class="view-btn active" disabled>Point Cloud</button>
-            <button id="btn-mesh" class="view-btn" disabled>Mesh</button>
-            <button id="btn-rfid" class="view-btn" disabled>RFID</button>
-            <button id="btn-trajectory" class="view-btn" disabled>ARCore軌跡</button>
-            <button id="btn-trajectory-colmap" class="view-btn" disabled>COLMAP軌跡</button>
-            <div id="rotation-controls" style="margin-left: 20px; display: flex; align-items: center; gap: 10px;">
-                <span style="color: #ff6666; font-size: 11px;">X:</span>
-                <input type="range" id="rot-x" min="-45" max="45" value="0" style="width: 60px; accent-color: #ff6666;">
-                <span id="rot-x-val" style="color: #ff6666; font-size: 10px; width: 35px;">0°</span>
-        <div class="progress-container hidden" id="progress-container">
-            <div class="progress-step" id="progress-step">Processing...</div>
-            <div class="progress-bar">
-                <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
-            </div>
-            <div class="progress-text" id="progress-text">0%</div>
-            <div class="progress-detail" id="progress-detail"></div>
-        </div>
-                
-                <span style="color: #66ff66; font-size: 11px;">Y:</span>
-                <input type="range" id="rot-y" min="-45" max="45" value="0" style="width: 60px; accent-color: #66ff66;">
-                <span id="rot-y-val" style="color: #66ff66; font-size: 10px; width: 35px;">0°</span>
-                
-                <span style="color: #6666ff; font-size: 11px;">Z:</span>
-                <input type="range" id="rot-z" min="-45" max="45" value="0" style="width: 60px; accent-color: #6666ff;">
-                <span id="rot-z-val" style="color: #6666ff; font-size: 10px; width: 35px;">0°</span>
-                
-                <button id="apply-rotation" style="background: rgba(255, 150, 0, 0.8); border: none; color: #000; padding: 4px 8px; border-radius: 3px; font-size: 10px; cursor: pointer;">適用</button>
-                <button id="reset-rotation" style="background: rgba(100, 100, 100, 0.8); border: none; color: #fff; padding: 4px 8px; border-radius: 3px; font-size: 10px; cursor: pointer;">リセット</button>
-            </div>
-        </div>
-        
-        <div class="stats">
-            <div class="stat">
-                <span class="stat-value" id="point-count">0</span>
-                <span class="stat-label">Points</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="face-count">0</span>
-                <span class="stat-label">Faces</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="rfid-count">0</span>
-                <span class="stat-label">RFIDs</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="trajectory-count">0</span>
-                <span class="stat-label">Poses</span>
-            </div>
         </div>
     </header>
     
@@ -553,16 +476,9 @@
         </div>
         <div class="info-row">
             <span class="info-label">Depth Source:</span>
-        let trajectoryLine = null;
-        let trajectorySpheres = [];
-        let trajectoryArrows = [];  // カメラ向き矢印
-        let trajectoryColmapLine = null;
-        let trajectoryColmapSpheres = [];
-        let trajectoryColmapArrows = [];  // COLMAP カメラ向き矢印
             <span class="info-value" id="info-depth-source">-</span>
         </div>
-        let displayMode = 'pointcloud'; // pointcloud, mesh, rfid, trajectory, trajectory_colmap
-        let sceneCenterOffset = new THREE.Vector3(0, 0, 0); // メッシュ/点群の中心オフセット
+        
         <div class="panel-title" style="margin-top: 15px;">RFID DETECTIONS</div>
         <div class="rfid-list" id="rfid-list">
             <div style="color: #666; font-size: 11px;">No RFID data</div>
@@ -608,34 +524,10 @@
         }
         
         // OrbitControlsとPLYLoaderがグローバルに利用可能になるまで待つ
-            // Axes Helper with labels
-            const axesHelper = new THREE.AxesHelper(2);まれる
+        if (typeof THREE !== 'undefined') {
+            // OrbitControlsとPLYLoaderはexamples/jsから読み込まれる
             console.log('Three.js loaded');
         }
-            // Axis labels (X=Red, Y=Green, Z=Blue)
-            const createAxisLabel = (text, color, position) => {
-                const canvas = document.createElement('canvas');
-                canvas.width = 64;
-                canvas.height = 64;
-                const ctx = canvas.getContext('2d');
-                ctx.fillStyle = color;
-                ctx.font = 'bold 48px Arial';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(text, 32, 32);
-                
-                const texture = new THREE.CanvasTexture(canvas);
-                const material = new THREE.SpriteMaterial({ map: texture });
-                const sprite = new THREE.Sprite(material);
-                sprite.position.copy(position);
-                sprite.scale.set(0.3, 0.3, 1);
-                return sprite;
-            };
-            
-            scene.add(createAxisLabel('X', '#ff0000', new THREE.Vector3(2.3, 0, 0)));
-            scene.add(createAxisLabel('Y', '#00ff00', new THREE.Vector3(0, 2.3, 0)));
-            scene.add(createAxisLabel('Z', '#0000ff', new THREE.Vector3(0, 0, 2.3)));
-            
         
         // 未処理のPromiseエラーをキャッチ（サービスワーカーのエラーを無視）
         window.addEventListener('unhandledrejection', function(event) {
@@ -667,104 +559,13 @@
         let trajectoryColmapLine = null;
         let trajectoryColmapSpheres = [];
         let trajectoryColmapArrows = [];  // COLMAP カメラ向き矢印
-        let progressPollingInterval = null;
-        
-        function showLoading(text = 'Loading...', showProgress = false) {
+        let currentJobId = null;
         let availableFiles = {};
         let displayMode = 'pointcloud'; // pointcloud, mesh, rfid, trajectory, trajectory_colmap
-            
-            const progressContainer = document.getElementById('progress-container');
-            if (showProgress) {
-                progressContainer.classList.remove('hidden');
-            } else {
-                progressContainer.classList.add('hidden');
-            }
-        }
-        
-        function updateProgress(percent, message, step = null) {
-            const progressFill = document.getElementById('progress-fill');
-            const progressText = document.getElementById('progress-text');
-            const loadingText = document.getElementById('loading-text');
-            const progressContainer = document.getElementById('progress-container');
-            const progressStep = document.getElementById('progress-step');
-            const progressDetail = document.getElementById('progress-detail');
-            
-            progressContainer.classList.remove('hidden');
-            progressFill.style.width = `${percent}%`;
-            progressText.textContent = `${percent}%`;
-            
-            // ステップ名を日本語で表示
-            const stepNames = {
-                'queued': '待機中',
-                'parsing': 'データ解析',
-                'mvs_pipeline': 'MVS処理 (COLMAP)',
-                'rgbd_integration': 'RGB-D統合',
-                'pointcloud_fusion': '点群融合',
-                'mesh_generation': 'メッシュ生成',
-                'extracting': '点群・メッシュ抽出',
-                'saving': '結果保存',
-                'done': '完了'
-            };
-            
-            if (step) {
-                progressStep.textContent = stepNames[step] || step;
-            }
-            
-            if (message) {
-                progressDetail.textContent = message;
-                loadingText.textContent = '処理中...';
-            }
         let sceneCenterOffset = new THREE.Vector3(0, 0, 0); // メッシュ/点群の中心オフセット
         
         // ============================================================
         // Initialization
-            document.getElementById('progress-container').classList.add('hidden');
-            if (progressPollingInterval) {
-                clearInterval(progressPollingInterval);
-                progressPollingInterval = null;
-            }
-        }
-        
-        // ============================================================
-        // Progress Polling
-        // ============================================================
-        async function pollJobProgress(jobId) {
-            try {
-                const response = await fetch(`${API_BASE}/api/v1/jobs/${jobId}/status`);
-                if (!response.ok) return null;
-                
-                const status = await response.json();
-                return status;
-            } catch (error) {
-                console.error('Failed to poll progress:', error);
-                return null;
-            }
-        }
-        
-        function startProgressPolling(jobId) {
-            if (progressPollingInterval) {
-                clearInterval(progressPollingInterval);
-            }
-            
-            progressPollingInterval = setInterval(async () => {
-                const status = await pollJobProgress(jobId);
-                if (!status) return;
-                
-                if (status.status === 'completed') {
-                    hideLoading();
-                    // Reload job data
-                    loadJob(jobId);
-                } else if (status.status === 'failed') {
-                    hideLoading();
-                    showLoading('Processing failed: ' + (status.error || 'Unknown error'));
-                    setTimeout(hideLoading, 5000);
-                } else if (status.status === 'processing') {
-                    const progress = status.progress || 0;
-                    const message = status.message || 'Processing...';
-                    const step = status.current_step || null;
-                    updateProgress(progress, message, step);
-                }
-            }, 10000); // Poll every 10 seconds
         // ============================================================
         function initViewer() {
             const container = document.getElementById('viewer-container');
@@ -854,30 +655,7 @@
             if (event.key === 'r' || event.key === 'R') {
                 controls.reset();
                 camera.position.set(2, 2, 2);
-            let isPollingProgress = false;
-            
             }
-                // First, check job status via API
-                const statusResponse = await fetch(`${API_BASE}/api/v1/jobs/${jobId}/status`);
-                if (statusResponse.ok) {
-                    const status = await statusResponse.json();
-                    
-                    // If job is still processing, show progress and start polling
-                    if (status.status === 'processing' || status.status === 'pending' || status.status === 'queued') {
-                        document.getElementById('info-status').textContent = status.status;
-                        document.getElementById('info-mode').textContent = (status.mode || '-').toUpperCase();
-                        
-                        const progress = status.progress || 0;
-                        const message = status.message || 'Processing...';
-                        const step = status.current_step || null;
-                        showLoading('処理中...', true);
-                        updateProgress(progress, message, step);
-                        startProgressPolling(jobId);
-                        isPollingProgress = true;
-                        return; // Don't try to load files yet
-                    }
-                }
-                
         }
         
         function animate() {
@@ -943,22 +721,6 @@
             document.getElementById('progress-container').classList.add('hidden');
             if (progressPollingInterval) {
                 clearInterval(progressPollingInterval);
-                // Load Trajectory (always try to load)
-                showLoading('Loading trajectory...');
-                try {
-                    await loadTrajectory(jobId);
-                } catch (error) {
-                    console.error('Failed to load trajectory:', error);
-                }
-                
-                // Load COLMAP Trajectory
-                showLoading('Loading COLMAP trajectory...');
-                try {
-                    await loadTrajectoryColmap(jobId);
-                } catch (error) {
-                    console.error('Failed to load COLMAP trajectory:', error);
-                }
-                
                 progressPollingInterval = null;
             }
         }
@@ -975,10 +737,7 @@
                 return status;
             } catch (error) {
                 console.error('Failed to poll progress:', error);
-                // Only hide loading for completed jobs (not processing ones)
-                if (!isPollingProgress) {
-                    hideLoading();
-                }
+                return null;
             }
         }
         
@@ -1002,60 +761,9 @@
                 } else if (status.status === 'processing') {
                     const progress = status.progress || 0;
                     const message = status.message || 'Processing...';
-            if (trajectoryLine) {
-                scene.remove(trajectoryLine);
-                trajectoryLine.geometry?.dispose();
-                trajectoryLine.material?.dispose();
-                trajectoryLine = null;
-            }
-            trajectorySpheres.forEach(s => {
-                scene.remove(s);
-                s.geometry?.dispose();
-                s.material?.dispose();
-            });
-            trajectorySpheres = [];
-            
-            // 矢印のクリーンアップ
-            trajectoryArrows.forEach(a => {
-                scene.remove(a);
-                a.line?.geometry?.dispose();
-                a.line?.material?.dispose();
-                a.cone?.geometry?.dispose();
-                a.cone?.material?.dispose();
-            });
-            trajectoryArrows = [];
-            
-            // COLMAP軌跡のクリーンアップ
-            if (trajectoryColmapLine) {
-                scene.remove(trajectoryColmapLine);
-                trajectoryColmapLine.geometry?.dispose();
-                trajectoryColmapLine.material?.dispose();
-                trajectoryColmapLine = null;
-            }
-            trajectoryColmapSpheres.forEach(s => {
-                scene.remove(s);
-                s.geometry?.dispose();
-                s.material?.dispose();
-            });
-            trajectoryColmapSpheres = [];
-            
-            // COLMAP矢印のクリーンアップ
-            trajectoryColmapArrows.forEach(a => {
-                scene.remove(a);
-                a.line?.geometry?.dispose();
-                a.line?.material?.dispose();
-                a.cone?.geometry?.dispose();
-                a.cone?.material?.dispose();
-            });
-            trajectoryColmapArrows = [];
-            
                     const step = status.current_step || null;
                     updateProgress(progress, message, step);
                 }
-            document.getElementById('trajectory-count').textContent = '0';
-            
-            // 中心オフセットをリセット
-            sceneCenterOffset.set(0, 0, 0);
             }, 10000); // Poll every 10 seconds
         }
         
@@ -1201,12 +909,10 @@
                     point_cloud: false,
                     mesh: true,
                     rfid: true
-                                // Center - オフセットを保存してから中心化
+                };
                 const defaultView = viewerConfig.default_view || 'mesh';
                 
-                                sceneCenterOffset.copy(center); // 中心オフセットを保存
                 // Load mesh first (優先)
-                                console.log(`Mesh center offset: (${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)})`);
                 if (autoLoad.mesh && availableFiles['mesh.ply']) {
                     showLoading('Loading mesh...');
                     try {
@@ -1299,39 +1005,22 @@
             if (trajectoryLine) {
                 scene.remove(trajectoryLine);
                 trajectoryLine.geometry?.dispose();
-                    // Create marker - 大きめのオレンジ球体
-                    const geometry = new THREE.SphereGeometry(0.05, 16, 16);
-                    const material = new THREE.MeshBasicMaterial({ 
-                        color: 0xff6600,
-                        transparent: true,
-                        opacity: 0.9
-                    });
+                trajectoryLine.material?.dispose();
+                trajectoryLine = null;
+            }
             trajectorySpheres.forEach(s => {
                 scene.remove(s);
                 s.geometry?.dispose();
-                    // ARCore座標系で保存されているので、sceneCenterOffsetを適用
-                    let pos = { x: 0, y: 0, z: 0 };
                 s.material?.dispose();
-                        pos = detection.position;
+            });
             trajectorySpheres = [];
-                        pos = detection.pose.position;
+            
             // 矢印のクリーンアップ
             trajectoryArrows.forEach(a => {
-                    // sceneCenterOffsetを適用（メッシュ/点群と同じ座標系に）
-                    marker.position.set(
-                        pos.x - sceneCenterOffset.x,
-                        pos.y - sceneCenterOffset.y,
-                        pos.z - sceneCenterOffset.z
-                    );
-                    
                 scene.remove(a);
                 a.line?.geometry?.dispose();
                 a.line?.material?.dispose();
                 a.cone?.geometry?.dispose();
-                    // Debug: RFID位置をコンソールに出力
-                    console.log(`RFID ${index}: original (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}) -> adjusted (${marker.position.x.toFixed(2)}, ${marker.position.y.toFixed(2)}, ${marker.position.z.toFixed(2)})`);
-                    console.log(`  sceneCenterOffset: (${sceneCenterOffset.x.toFixed(2)}, ${sceneCenterOffset.y.toFixed(2)}, ${sceneCenterOffset.z.toFixed(2)})`);
-                    
                 a.cone?.material?.dispose();
             });
             trajectoryArrows = [];
@@ -1351,240 +1040,6 @@
             trajectoryColmapSpheres = [];
             
             // COLMAP矢印のクリーンアップ
-        // クォータニオンから向き矢印を作成するヘルパー関数
-        function createOrientationArrow(position, quaternion, color, length = 0.15) {
-            // quaternion: [x, y, z, w] または {x, y, z, w}
-            let qx, qy, qz, qw;
-            if (Array.isArray(quaternion)) {
-                [qx, qy, qz, qw] = quaternion;
-            } else {
-                qx = quaternion.x;
-                qy = quaternion.y;
-                qz = quaternion.z;
-                qw = quaternion.w;
-            }
-            
-            // THREE.Quaternionを作成
-            const quat = new THREE.Quaternion(qx, qy, qz, qw);
-            
-            // カメラの前方向（-Z軸）を変換
-            const forward = new THREE.Vector3(0, 0, -1);
-            forward.applyQuaternion(quat);
-            forward.normalize();
-            
-            // ArrowHelperを作成
-            const arrow = new THREE.ArrowHelper(
-                forward,        // 方向
-                position,       // 始点
-                length,         // 長さ
-                color,          // 色
-                length * 0.3,   // 矢頭の長さ
-                length * 0.15   // 矢頭の幅
-            );
-            
-            return arrow;
-        }
-        
-        async function loadTrajectory(jobId) {
-            try {
-                const response = await fetch(`${API_BASE}/scenes/${jobId}/trajectory.json`);
-                const data = await response.json();
-                
-                const poses = data.poses || [];
-                
-                if (poses.length === 0) {
-                    document.getElementById('trajectory-count').textContent = '0';
-                    return;
-                }
-                
-                // メッシュ読み込み時に保存した中心オフセットを使用
-                console.log(`Applying trajectory offset: (${sceneCenterOffset.x.toFixed(3)}, ${sceneCenterOffset.y.toFixed(3)}, ${sceneCenterOffset.z.toFixed(3)})`);
-                
-                // 軌跡ラインを作成 (position: {x,y,z}、配列 [x,y,z]、または直接 {x,y,z} の全形式に対応)
-                const positions = [];
-                poses.forEach(pose => {
-                    const pos = pose.position || pose;
-                    const x = Array.isArray(pos) ? pos[0] : pos.x;
-                    const y = Array.isArray(pos) ? pos[1] : pos.y;
-                    const z = Array.isArray(pos) ? pos[2] : pos.z;
-                    positions.push(
-                        x - sceneCenterOffset.x,
-                        y - sceneCenterOffset.y,
-                        z - sceneCenterOffset.z
-                    );
-                });
-                
-                const lineGeometry = new THREE.BufferGeometry();
-                lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                
-                const lineMaterial = new THREE.LineBasicMaterial({
-                    color: 0xffff00,
-                    linewidth: 2
-                });
-                
-                trajectoryLine = new THREE.Line(lineGeometry, lineMaterial);
-                trajectoryLine.visible = false;
-                scene.add(trajectoryLine);
-                
-                // 開始点と終了点にマーカーを追加
-                const startGeom = new THREE.SphereGeometry(0.02, 16, 16);
-                const startMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // 緑=開始
-                const startSphere = new THREE.Mesh(startGeom, startMat);
-                const firstPose = poses[0];
-                const firstPos = firstPose.position || firstPose;
-                const firstPosVec = new THREE.Vector3(
-                    (Array.isArray(firstPos) ? firstPos[0] : firstPos.x) - sceneCenterOffset.x,
-                    (Array.isArray(firstPos) ? firstPos[1] : firstPos.y) - sceneCenterOffset.y,
-                    (Array.isArray(firstPos) ? firstPos[2] : firstPos.z) - sceneCenterOffset.z
-                );
-                startSphere.position.copy(firstPosVec);
-                startSphere.visible = false;
-                scene.add(startSphere);
-                trajectorySpheres.push(startSphere);
-                
-                // 開始点の向き矢印
-                if (firstPose.rotation) {
-                    const startArrow = createOrientationArrow(firstPosVec, firstPose.rotation, 0x00ff00, 0.15);
-                    startArrow.visible = false;
-                    scene.add(startArrow);
-                    trajectoryArrows.push(startArrow);
-                }
-                
-                const endGeom = new THREE.SphereGeometry(0.02, 16, 16);
-                const endMat = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // 赤=終了
-                const endSphere = new THREE.Mesh(endGeom, endMat);
-                const lastPose = poses[poses.length - 1];
-                const lastPos = lastPose.position || lastPose;
-                const lastPosVec = new THREE.Vector3(
-                    (Array.isArray(lastPos) ? lastPos[0] : lastPos.x) - sceneCenterOffset.x,
-                    (Array.isArray(lastPos) ? lastPos[1] : lastPos.y) - sceneCenterOffset.y,
-                    (Array.isArray(lastPos) ? lastPos[2] : lastPos.z) - sceneCenterOffset.z
-                );
-                endSphere.position.copy(lastPosVec);
-                endSphere.visible = false;
-                scene.add(endSphere);
-                trajectorySpheres.push(endSphere);
-                
-                // 終了点の向き矢印
-                if (lastPose.rotation) {
-                    const endArrow = createOrientationArrow(lastPosVec, lastPose.rotation, 0xff0000, 0.15);
-                    endArrow.visible = false;
-                    scene.add(endArrow);
-                    trajectoryArrows.push(endArrow);
-                }
-                
-                document.getElementById('trajectory-count').textContent = poses.length.toString();
-                document.getElementById('btn-trajectory').disabled = false;
-                
-                console.log(`ARCore Trajectory loaded: ${poses.length} poses`);
-                
-            } catch (error) {
-                console.error('ARCore Trajectory load error:', error);
-            }
-        }
-        
-        async function loadTrajectoryColmap(jobId) {
-            try {
-                const response = await fetch(`${API_BASE}/scenes/${jobId}/trajectory_colmap.json`);
-                if (!response.ok) {
-                    console.log('COLMAP trajectory not available');
-                    return;
-                }
-                const data = await response.json();
-                
-                const poses = data.poses || [];
-                
-                if (poses.length === 0) {
-                    return;
-                }
-                
-                // メッシュ読み込み時に保存した中心オフセットを使用
-                console.log(`Applying COLMAP trajectory offset: (${sceneCenterOffset.x.toFixed(3)}, ${sceneCenterOffset.y.toFixed(3)}, ${sceneCenterOffset.z.toFixed(3)})`);
-                
-                // 軌跡ラインを作成（配列形式とオブジェクト形式の両方に対応）
-                const positions = [];
-                poses.forEach(pose => {
-                    const pos = pose.position || pose;
-                    const x = Array.isArray(pos) ? pos[0] : pos.x;
-                    const y = Array.isArray(pos) ? pos[1] : pos.y;
-                    const z = Array.isArray(pos) ? pos[2] : pos.z;
-                    positions.push(
-                        x - sceneCenterOffset.x,
-                        y - sceneCenterOffset.y,
-                        z - sceneCenterOffset.z
-                    );
-                });
-                
-                const lineGeometry = new THREE.BufferGeometry();
-                lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                
-                // COLMAP軌跡はシアン色
-                const lineMaterial = new THREE.LineBasicMaterial({
-                    color: 0x00ffff,
-                    linewidth: 2
-                });
-                
-                trajectoryColmapLine = new THREE.Line(lineGeometry, lineMaterial);
-                trajectoryColmapLine.visible = false;
-                scene.add(trajectoryColmapLine);
-                
-                // 開始点と終了点にマーカーを追加
-                const startGeom = new THREE.SphereGeometry(0.025, 16, 16);
-                const startMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa }); // ターコイズ=開始
-                const startSphere = new THREE.Mesh(startGeom, startMat);
-                const firstPose = poses[0];
-                const firstPos = firstPose.position || firstPose;
-                const firstPosVec = new THREE.Vector3(
-                    (Array.isArray(firstPos) ? firstPos[0] : firstPos.x) - sceneCenterOffset.x,
-                    (Array.isArray(firstPos) ? firstPos[1] : firstPos.y) - sceneCenterOffset.y,
-                    (Array.isArray(firstPos) ? firstPos[2] : firstPos.z) - sceneCenterOffset.z
-                );
-                startSphere.position.copy(firstPosVec);
-                startSphere.visible = false;
-                scene.add(startSphere);
-                trajectoryColmapSpheres.push(startSphere);
-                
-                // 開始点の向き矢印（COLMAP）
-                if (firstPose.rotation) {
-                    const startArrow = createOrientationArrow(firstPosVec, firstPose.rotation, 0x00ffaa, 0.15);
-                    startArrow.visible = false;
-                    scene.add(startArrow);
-                    trajectoryColmapArrows.push(startArrow);
-                }
-                
-                const endGeom = new THREE.SphereGeometry(0.025, 16, 16);
-                const endMat = new THREE.MeshBasicMaterial({ color: 0xff00ff }); // マゼンタ=終了
-                const endSphere = new THREE.Mesh(endGeom, endMat);
-                const lastPose = poses[poses.length - 1];
-                const lastPos = lastPose.position || lastPose;
-                const lastPosVec = new THREE.Vector3(
-                    (Array.isArray(lastPos) ? lastPos[0] : lastPos.x) - sceneCenterOffset.x,
-                    (Array.isArray(lastPos) ? lastPos[1] : lastPos.y) - sceneCenterOffset.y,
-                    (Array.isArray(lastPos) ? lastPos[2] : lastPos.z) - sceneCenterOffset.z
-                );
-                endSphere.position.copy(lastPosVec);
-                endSphere.visible = false;
-                scene.add(endSphere);
-                trajectoryColmapSpheres.push(endSphere);
-                
-                // 終了点の向き矢印（COLMAP）
-                if (lastPose.rotation) {
-                    const endArrow = createOrientationArrow(lastPosVec, lastPose.rotation, 0xff00ff, 0.15);
-                    endArrow.visible = false;
-                    scene.add(endArrow);
-                    trajectoryColmapArrows.push(endArrow);
-                }
-                
-                document.getElementById('btn-trajectory-colmap').disabled = false;
-                
-                console.log(`COLMAP Trajectory loaded: ${poses.length} poses (${data.coordinate_system})`);
-                
-            } catch (error) {
-                console.error('COLMAP Trajectory load error:', error);
-                document.getElementById('btn-trajectory').disabled = true;
-            }
-        }
-        
             trajectoryColmapArrows.forEach(a => {
                 scene.remove(a);
                 a.line?.geometry?.dispose();
@@ -1593,58 +1048,25 @@
                 a.cone?.material?.dispose();
             });
             trajectoryColmapArrows = [];
-            const btnId = mode === 'trajectory-colmap' ? 'btn-trajectory-colmap' : `btn-${mode}`;
-            const btn = document.getElementById(btnId);
-            if (btn) btn.classList.add('active');
+            
             document.getElementById('point-count').textContent = '0';
-            // デフォルトで全て非表示
-            if (pointCloud) pointCloud.visible = false;
-            if (mesh) mesh.visible = false;
-            rfidMarkers.forEach(m => m.visible = false);
-            if (trajectoryLine) trajectoryLine.visible = false;
-            trajectorySpheres.forEach(s => s.visible = false);
-            trajectoryArrows.forEach(a => a.visible = false);
-            if (trajectoryColmapLine) trajectoryColmapLine.visible = false;
-            trajectoryColmapSpheres.forEach(s => s.visible = false);
-            trajectoryColmapArrows.forEach(a => a.visible = false);
+            document.getElementById('face-count').textContent = '0';
+            document.getElementById('rfid-count').textContent = '0';
+            document.getElementById('trajectory-count').textContent = '0';
+            
             // 中心オフセットをリセット
-            // モードに応じて表示
-            if (mode === 'pointcloud') {
-                if (pointCloud) pointCloud.visible = true;
-            } else if (mode === 'mesh') {
-                if (mesh) mesh.visible = true;
-            } else if (mode === 'rfid') {
+            sceneCenterOffset.set(0, 0, 0);
+        }
         
         // ============================================================
         // Load Assets
-            } else if (mode === 'trajectory') {
-                // ARCore軌跡（黄色）
-                if (trajectoryLine) trajectoryLine.visible = true;
-                trajectorySpheres.forEach(s => s.visible = true);
-                trajectoryArrows.forEach(a => a.visible = true);  // 向き矢印
-                if (mesh) mesh.visible = true;
-                rfidMarkers.forEach(m => m.visible = true);
-            } else if (mode === 'trajectory-colmap') {
-                // COLMAP軌跡（シアン）
-                if (trajectoryColmapLine) trajectoryColmapLine.visible = true;
-                trajectoryColmapSpheres.forEach(s => s.visible = true);
-                trajectoryColmapArrows.forEach(a => a.visible = true);  // 向き矢印
-                // ARCore軌跡も一緒に表示して比較
-                if (trajectoryLine) trajectoryLine.visible = true;
-                trajectorySpheres.forEach(s => s.visible = true);
-                trajectoryArrows.forEach(a => a.visible = true);  // 向き矢印
-                if (mesh) mesh.visible = true;
         // ============================================================
         async function loadPointCloud(jobId) {
-            // カメラを調整resolve, reject) => {
+            return new Promise((resolve, reject) => {
                 try {
                     const loader = new THREE.PLYLoader();
                     const url = `${API_BASE}/scenes/${jobId}/point_cloud.ply`;
                     
-            } else if (mode === 'trajectory' && trajectoryLine) {
-                fitCameraToObject(trajectoryLine);
-            } else if (mode === 'trajectory-colmap' && trajectoryColmapLine) {
-                fitCameraToObject(trajectoryColmapLine);
                     console.log('Loading point cloud from:', url);
                     
                     loader.load(url,
@@ -1676,123 +1098,6 @@
                                     // 新しいgeometryを作成
                                     const newPositions = new Float32Array(indices.length * 3);
                                     const newColors = positions.count > 0 && geometry.attributes.color 
-        document.getElementById('btn-trajectory').addEventListener('click', () => setDisplayMode('trajectory'));
-        document.getElementById('btn-trajectory-colmap').addEventListener('click', () => setDisplayMode('trajectory-colmap'));
-        
-        // Rotation sliders - update display values
-        ['x', 'y', 'z'].forEach(axis => {
-            const slider = document.getElementById(`rot-${axis}`);
-            const valDisplay = document.getElementById(`rot-${axis}-val`);
-            slider.addEventListener('input', () => {
-                valDisplay.textContent = `${slider.value}°`;
-            });
-        });
-        
-        // Apply rotation button
-        document.getElementById('apply-rotation').addEventListener('click', async () => {
-            if (!currentJobId) {
-                alert('ジョブを選択してください');
-                return;
-            }
-            
-            const rotX = parseFloat(document.getElementById('rot-x').value);
-            const rotY = parseFloat(document.getElementById('rot-y').value);
-            const rotZ = parseFloat(document.getElementById('rot-z').value);
-            
-            console.log(`Applying rotation: X=${rotX}°, Y=${rotY}°, Z=${rotZ}°`);
-            
-            // Send rotation request to server
-            showLoading();
-            try {
-                const response = await fetch(`${API_BASE}/scenes/${currentJobId}/apply_rotation`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rot_x: rotX, rot_y: rotY, rot_z: rotZ })
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Server error: ${response.status}`);
-                }
-                
-                const result = await response.json();
-                console.log('Rotation applied:', result);
-                
-                // Reload the mesh
-                await loadMesh(currentJobId);
-                hideLoading();
-                setDisplayMode('mesh');
-            } catch (error) {
-                console.error('Rotation apply error:', error);
-                alert(`回転適用エラー: ${error.message}`);
-                hideLoading();
-            }
-        });
-        
-        // Reset rotation button
-        document.getElementById('reset-rotation').addEventListener('click', async () => {
-            // Reset sliders
-            ['x', 'y', 'z'].forEach(axis => {
-                document.getElementById(`rot-${axis}`).value = 0;
-                document.getElementById(`rot-${axis}-val`).textContent = '0°';
-            });
-            
-            if (!currentJobId) return;
-            
-            // Reset mesh to original
-            showLoading();
-            try {
-                const response = await fetch(`${API_BASE}/scenes/${currentJobId}/reset_rotation`, {
-                    method: 'POST'
-                });
-                
-                if (response.ok) {
-                    await loadMesh(currentJobId);
-                }
-                hideLoading();
-                setDisplayMode('mesh');
-            } catch (error) {
-                console.error('Reset error:', error);
-                hideLoading();
-            }
-        });
-        
-        // Load mesh function (refactored for reuse)
-        async function loadMesh(jobId) {
-            const url = `${API_BASE}/scenes/${jobId}/mesh.ply?t=${Date.now()}`;
-            const loader = new THREE.PLYLoader();
-            const geometry = await new Promise((resolve, reject) => {
-                loader.load(url, resolve, undefined, reject);
-            });
-            
-            if (mesh) {
-                scene.remove(mesh);
-                mesh.geometry.dispose();
-                mesh.material.dispose();
-            }
-            
-            geometry.computeVertexNormals();
-            const material = new THREE.MeshStandardMaterial({
-                vertexColors: geometry.hasAttribute('color'),
-                side: THREE.DoubleSide,
-                metalness: 0.1,
-                roughness: 0.8
-            });
-            
-            if (!geometry.hasAttribute('color')) {
-                material.color = new THREE.Color(0.6, 0.6, 0.6);
-            }
-            
-            mesh = new THREE.Mesh(geometry, material);
-            
-            geometry.computeBoundingBox();
-            const center = new THREE.Vector3();
-            geometry.boundingBox.getCenter(center);
-            mesh.position.sub(center);
-            sceneCenterOffset = center.clone();
-            
-            scene.add(mesh);
-            mesh.visible = true;
-        }
                                         ? new Float32Array(indices.length * 3) 
                                         : null;
                                     
@@ -1803,699 +1108,6 @@
                                         newPositions[i * 3 + 2] = positions.getZ(idx);
                                         
                                         if (newColors && geometry.attributes.color) {
-                                            newColors[i * 3] = color.getX(idx);
-                                            newColors[i * 3 + 1] = color.getY(idx);
-                                            newColors[i * 3 + 2] = color.getZ(idx);
-                                        }
-                                    }
-                                    
-                                    geometry = new THREE.BufferGeometry();
-                                    geometry.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
-                                    if (newColors) {
-                                        geometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
-                                    }
-                                    
-                                    console.log(`Downsampled to ${indices.length} points`);
-                                }
-                                
-                                // Colors (height-based if no vertex colors)
-                                let colors = geometry.attributes.color;
-                                
-                                if (!colors) {
-                                    const positions = geometry.attributes.position;
-                                    const colorsArray = new Float32Array(positions.count * 3);
-                                    const bbox = geometry.boundingBox;
-                                    const minY = bbox.min.y, maxY = bbox.max.y;
-                                    const rangeY = maxY - minY || 1;
-                                    
-                                    for (let i = 0; i < positions.count; i++) {
-                                        const y = positions.getY(i);
-                                        const t = (y - minY) / rangeY;
-                                        const color = new THREE.Color();
-                                        color.setHSL(0.5 - t * 0.3, 0.8, 0.5);
-                                        colorsArray[i * 3] = color.r;
-                                        colorsArray[i * 3 + 1] = color.g;
-                                        colorsArray[i * 3 + 2] = color.b;
-                                    }
-                                    geometry.setAttribute('color', new THREE.BufferAttribute(colorsArray, 3));
-                                }
-                                
-                                const material = new THREE.PointsMaterial({
-                                    size: 0.005,
-                                    vertexColors: true,
-                                    sizeAttenuation: true
-                                });
-                                
-                                pointCloud = new THREE.Points(geometry, material);
-                                scene.add(pointCloud);
-                                
-                                const pointCount = geometry.attributes.position.count;
-                                document.getElementById('point-count').textContent = pointCount.toLocaleString();
-                                
-                                fitCameraToObject(pointCloud);
-                                console.log('Point cloud loaded successfully');
-                                resolve();
-                            } catch (error) {
-                                console.error('Error processing point cloud:', error);
-                                reject(error);
-                            }
-                        },
-                        (progress) => {
-                            // ローディング進捗
-                            if (progress.lengthComputable) {
-                                const percent = (progress.loaded / progress.total) * 100;
-                                console.log(`Loading point cloud: ${percent.toFixed(1)}%`);
-                            }
-                        },
-                        (error) => {
-                            console.error('PLY load error:', error);
-                            reject(error);
-                        }
-                    );
-                } catch (error) {
-                    console.error('Error loading point cloud:', error);
-                    reject(error);
-                }
-            });
-        }
-        
-        async function loadMesh(jobId) {
-            return new Promise((resolve, reject) => {
-                try {
-                    const loader = new THREE.PLYLoader();
-                    const url = `${API_BASE}/scenes/${jobId}/mesh.ply`;
-                    
-                    console.log('Loading mesh from:', url);
-                    
-                    loader.load(url,
-                        (geometry) => {
-                            try {
-                                console.log('Mesh loaded, processing...');
-                                
-                                geometry.computeVertexNormals();
-                                geometry.computeBoundingBox();
-                                
-                                // Center - オフセットを保存してから中心化
-                                const center = new THREE.Vector3();
-                                geometry.boundingBox.getCenter(center);
-                                sceneCenterOffset.copy(center); // 中心オフセットを保存
-                                geometry.translate(-center.x, -center.y, -center.z);
-                                console.log(`Mesh center offset: (${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)})`);
-                                
-                                // メッシュのサイズ確認
-                                const triangleCount = geometry.index ? geometry.index.count / 3 : 0;
-                                console.log(`Mesh loaded: ${triangleCount.toLocaleString()} triangles`);
-                                
-                                if (triangleCount === 0) {
-                                    console.error('ERROR: Mesh has no triangles!');
-                                    reject(new Error('Mesh has no triangles'));
-                                    return;
-                                }
-                                
-                                // 大きなメッシュの場合は警告
-                                const MAX_TRIANGLES = 1000000; // 100万三角形まで
-                                if (triangleCount > MAX_TRIANGLES) {
-                                    console.warn(`Large mesh detected (${triangleCount.toLocaleString()} triangles). This may cause performance issues.`);
-                                }
-                                
-                                // メッシュに色がある場合はそれを使用、なければデフォルト色
-                                let material;
-                                if (geometry.attributes.color) {
-                                    material = new THREE.MeshStandardMaterial({
-                                        vertexColors: true,
-                                        roughness: 0.6,
-                                        metalness: 0.2,
-                                        flatShading: false,
-                                        side: THREE.DoubleSide
-                                    });
-                                } else {
-                                    material = new THREE.MeshStandardMaterial({
-                                        color: 0x00c896,
-                                        roughness: 0.6,
-                                        metalness: 0.2,
-                                        flatShading: false,
-                                        side: THREE.DoubleSide
-                                    });
-                                }
-                                
-                                mesh = new THREE.Mesh(geometry, material);
-                                // メッシュは読み込まれたら表示する（デフォルトで表示）
-                                mesh.visible = true;
-                                scene.add(mesh);
-                                
-                                const faceCount = geometry.index ? geometry.index.count / 3 : 0;
-                                document.getElementById('face-count').textContent = Math.floor(faceCount).toLocaleString();
-                                
-                                // カメラをメッシュに合わせる
-                                fitCameraToObject(mesh);
-                                
-                                console.log('Mesh loaded successfully');
-                                resolve();
-                            } catch (error) {
-                                console.error('Error processing mesh:', error);
-                                reject(error);
-                            }
-                        },
-                        (progress) => {
-                            // ローディング進捗
-                            if (progress.lengthComputable) {
-                                const percent = (progress.loaded / progress.total) * 100;
-                                console.log(`Loading mesh: ${percent.toFixed(1)}%`);
-                            }
-                        },
-                        (error) => {
-                            console.error('Mesh load error:', error);
-                            reject(error);
-                        }
-                    );
-                } catch (error) {
-                    console.error('Error loading mesh:', error);
-                    reject(error);
-                }
-            });
-        }
-        
-        async function loadRFID(jobId) {
-            try {
-                const response = await fetch(`${API_BASE}/scenes/${jobId}/rfid_positions.json`);
-                const data = await response.json();
-                
-                const rfidList = document.getElementById('rfid-list');
-                rfidList.innerHTML = '';
-                
-                // データ構造の対応: detections または tags
-                const detections = data.detections || data.tags || [];
-                
-                if (detections.length === 0) {
-                    rfidList.innerHTML = '<div style="color: #666; font-size: 11px;">No RFID data</div>';
-                    document.getElementById('rfid-count').textContent = '0';
-                    return;
-                }
-                
-                detections.forEach((detection, index) => {
-                    // Create marker - 大きめのオレンジ球体
-                    const geometry = new THREE.SphereGeometry(0.05, 16, 16);
-                    const material = new THREE.MeshBasicMaterial({ 
-                        color: 0xff6600,
-                        transparent: true,
-                        opacity: 0.9
-                    });
-                    const marker = new THREE.Mesh(geometry, material);
-                    
-                    // 位置情報の取得（position または pose.position）
-                    // ARCore座標系で保存されているので、sceneCenterOffsetを適用
-                    let pos = { x: 0, y: 0, z: 0 };
-                    if (detection.position) {
-                        pos = detection.position;
-                    } else if (detection.pose && detection.pose.position) {
-                        pos = detection.pose.position;
-                    }
-                    
-                    // sceneCenterOffsetを適用（メッシュ/点群と同じ座標系に）
-                    marker.position.set(
-                        pos.x - sceneCenterOffset.x,
-                        pos.y - sceneCenterOffset.y,
-                        pos.z - sceneCenterOffset.z
-                    );
-                    
-                    marker.visible = false;
-                    scene.add(marker);
-                    rfidMarkers.push(marker);
-                    
-                    // Debug: RFID位置をコンソールに出力
-                    console.log(`RFID ${index}: original (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}) -> adjusted (${marker.position.x.toFixed(2)}, ${marker.position.y.toFixed(2)}, ${marker.position.z.toFixed(2)})`);
-                    console.log(`  sceneCenterOffset: (${sceneCenterOffset.x.toFixed(2)}, ${sceneCenterOffset.y.toFixed(2)}, ${sceneCenterOffset.z.toFixed(2)})`);
-                    
-                    // Add to list
-                    const item = document.createElement('div');
-                    item.className = 'rfid-item';
-                    const tagId = detection.tag_id || detection.epc || `Tag ${index + 1}`;
-                    const rssi = detection.rssi !== undefined ? `${detection.rssi} dBm` : 'N/A';
-                    item.innerHTML = `
-                        <div class="rfid-epc">${tagId}</div>
-                        <div class="rfid-rssi">RSSI: ${rssi}</div>
-                    `;
-                    rfidList.appendChild(item);
-                });
-                
-                document.getElementById('rfid-count').textContent = detections.length.toString();
-                
-            } catch (error) {
-                console.error('RFID load error:', error);
-            }
-        }
-        
-        // クォータニオンから向き矢印を作成するヘルパー関数
-        function createOrientationArrow(position, quaternion, color, length = 0.15) {
-            // quaternion: [x, y, z, w] または {x, y, z, w}
-            let qx, qy, qz, qw;
-            if (Array.isArray(quaternion)) {
-                [qx, qy, qz, qw] = quaternion;
-            } else {
-                qx = quaternion.x;
-                qy = quaternion.y;
-                qz = quaternion.z;
-                qw = quaternion.w;
-            }
-            
-            // THREE.Quaternionを作成
-            const quat = new THREE.Quaternion(qx, qy, qz, qw);
-            
-            // カメラの前方向（-Z軸）を変換
-            const forward = new THREE.Vector3(0, 0, -1);
-            forward.applyQuaternion(quat);
-            forward.normalize();
-            
-            // ArrowHelperを作成
-            const arrow = new THREE.ArrowHelper(
-                forward,        // 方向
-                position,       // 始点
-                length,         // 長さ
-                color,          // 色
-                length * 0.3,   // 矢頭の長さ
-                length * 0.15   // 矢頭の幅
-            );
-            
-            return arrow;
-        }
-        
-        async function loadTrajectory(jobId) {
-            try {
-                const response = await fetch(`${API_BASE}/scenes/${jobId}/trajectory.json`);
-                const data = await response.json();
-                
-                const poses = data.poses || [];
-                
-                if (poses.length === 0) {
-                    document.getElementById('trajectory-count').textContent = '0';
-                    return;
-                }
-                
-                // メッシュ読み込み時に保存した中心オフセットを使用
-                console.log(`Applying trajectory offset: (${sceneCenterOffset.x.toFixed(3)}, ${sceneCenterOffset.y.toFixed(3)}, ${sceneCenterOffset.z.toFixed(3)})`);
-                
-                // 軌跡ラインを作成 (position: {x,y,z}、配列 [x,y,z]、または直接 {x,y,z} の全形式に対応)
-                const positions = [];
-                poses.forEach(pose => {
-                    const pos = pose.position || pose;
-                    const x = Array.isArray(pos) ? pos[0] : pos.x;
-                    const y = Array.isArray(pos) ? pos[1] : pos.y;
-                    const z = Array.isArray(pos) ? pos[2] : pos.z;
-                    positions.push(
-                        x - sceneCenterOffset.x,
-                        y - sceneCenterOffset.y,
-                        z - sceneCenterOffset.z
-                    );
-                });
-                
-                const lineGeometry = new THREE.BufferGeometry();
-                lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                
-                const lineMaterial = new THREE.LineBasicMaterial({
-                    color: 0xffff00,
-                    linewidth: 2
-                });
-                
-                trajectoryLine = new THREE.Line(lineGeometry, lineMaterial);
-                trajectoryLine.visible = false;
-                scene.add(trajectoryLine);
-                
-                // 開始点と終了点にマーカーを追加
-                const startGeom = new THREE.SphereGeometry(0.02, 16, 16);
-                const startMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // 緑=開始
-                const startSphere = new THREE.Mesh(startGeom, startMat);
-                const firstPose = poses[0];
-                const firstPos = firstPose.position || firstPose;
-                const firstPosVec = new THREE.Vector3(
-                    (Array.isArray(firstPos) ? firstPos[0] : firstPos.x) - sceneCenterOffset.x,
-                    (Array.isArray(firstPos) ? firstPos[1] : firstPos.y) - sceneCenterOffset.y,
-                    (Array.isArray(firstPos) ? firstPos[2] : firstPos.z) - sceneCenterOffset.z
-                );
-                startSphere.position.copy(firstPosVec);
-                startSphere.visible = false;
-                scene.add(startSphere);
-                trajectorySpheres.push(startSphere);
-                
-                // 開始点の向き矢印
-                if (firstPose.rotation) {
-                    const startArrow = createOrientationArrow(firstPosVec, firstPose.rotation, 0x00ff00, 0.15);
-                    startArrow.visible = false;
-                    scene.add(startArrow);
-                    trajectoryArrows.push(startArrow);
-                }
-                
-                const endGeom = new THREE.SphereGeometry(0.02, 16, 16);
-                const endMat = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // 赤=終了
-                const endSphere = new THREE.Mesh(endGeom, endMat);
-                const lastPose = poses[poses.length - 1];
-                const lastPos = lastPose.position || lastPose;
-                const lastPosVec = new THREE.Vector3(
-                    (Array.isArray(lastPos) ? lastPos[0] : lastPos.x) - sceneCenterOffset.x,
-                    (Array.isArray(lastPos) ? lastPos[1] : lastPos.y) - sceneCenterOffset.y,
-                    (Array.isArray(lastPos) ? lastPos[2] : lastPos.z) - sceneCenterOffset.z
-                );
-                endSphere.position.copy(lastPosVec);
-                endSphere.visible = false;
-                scene.add(endSphere);
-                trajectorySpheres.push(endSphere);
-                
-                // 終了点の向き矢印
-                if (lastPose.rotation) {
-                    const endArrow = createOrientationArrow(lastPosVec, lastPose.rotation, 0xff0000, 0.15);
-                    endArrow.visible = false;
-                    scene.add(endArrow);
-                    trajectoryArrows.push(endArrow);
-                }
-                
-                document.getElementById('trajectory-count').textContent = poses.length.toString();
-                document.getElementById('btn-trajectory').disabled = false;
-                
-                console.log(`ARCore Trajectory loaded: ${poses.length} poses`);
-                
-            } catch (error) {
-                console.error('ARCore Trajectory load error:', error);
-            }
-        }
-        
-        async function loadTrajectoryColmap(jobId) {
-            try {
-                const response = await fetch(`${API_BASE}/scenes/${jobId}/trajectory_colmap.json`);
-                if (!response.ok) {
-                    console.log('COLMAP trajectory not available');
-                    return;
-                }
-                const data = await response.json();
-                
-                const poses = data.poses || [];
-                
-                if (poses.length === 0) {
-                    return;
-                }
-                
-                // メッシュ読み込み時に保存した中心オフセットを使用
-                console.log(`Applying COLMAP trajectory offset: (${sceneCenterOffset.x.toFixed(3)}, ${sceneCenterOffset.y.toFixed(3)}, ${sceneCenterOffset.z.toFixed(3)})`);
-                
-                // 軌跡ラインを作成（配列形式とオブジェクト形式の両方に対応）
-                const positions = [];
-                poses.forEach(pose => {
-                    const pos = pose.position || pose;
-                    const x = Array.isArray(pos) ? pos[0] : pos.x;
-                    const y = Array.isArray(pos) ? pos[1] : pos.y;
-                    const z = Array.isArray(pos) ? pos[2] : pos.z;
-                    positions.push(
-                        x - sceneCenterOffset.x,
-                        y - sceneCenterOffset.y,
-                        z - sceneCenterOffset.z
-                    );
-                });
-                
-                const lineGeometry = new THREE.BufferGeometry();
-                lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                
-                // COLMAP軌跡はシアン色
-                const lineMaterial = new THREE.LineBasicMaterial({
-                    color: 0x00ffff,
-                    linewidth: 2
-                });
-                
-                trajectoryColmapLine = new THREE.Line(lineGeometry, lineMaterial);
-                trajectoryColmapLine.visible = false;
-                scene.add(trajectoryColmapLine);
-                
-                // 開始点と終了点にマーカーを追加
-                const startGeom = new THREE.SphereGeometry(0.025, 16, 16);
-                const startMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa }); // ターコイズ=開始
-                const startSphere = new THREE.Mesh(startGeom, startMat);
-                const firstPose = poses[0];
-                const firstPos = firstPose.position || firstPose;
-                const firstPosVec = new THREE.Vector3(
-                    (Array.isArray(firstPos) ? firstPos[0] : firstPos.x) - sceneCenterOffset.x,
-                    (Array.isArray(firstPos) ? firstPos[1] : firstPos.y) - sceneCenterOffset.y,
-                    (Array.isArray(firstPos) ? firstPos[2] : firstPos.z) - sceneCenterOffset.z
-                );
-                startSphere.position.copy(firstPosVec);
-                startSphere.visible = false;
-                scene.add(startSphere);
-                trajectoryColmapSpheres.push(startSphere);
-                
-                // 開始点の向き矢印（COLMAP）
-                if (firstPose.rotation) {
-                    const startArrow = createOrientationArrow(firstPosVec, firstPose.rotation, 0x00ffaa, 0.15);
-                    startArrow.visible = false;
-                    scene.add(startArrow);
-                    trajectoryColmapArrows.push(startArrow);
-                }
-                
-                const endGeom = new THREE.SphereGeometry(0.025, 16, 16);
-                const endMat = new THREE.MeshBasicMaterial({ color: 0xff00ff }); // マゼンタ=終了
-                const endSphere = new THREE.Mesh(endGeom, endMat);
-                const lastPose = poses[poses.length - 1];
-                const lastPos = lastPose.position || lastPose;
-                const lastPosVec = new THREE.Vector3(
-                    (Array.isArray(lastPos) ? lastPos[0] : lastPos.x) - sceneCenterOffset.x,
-                    (Array.isArray(lastPos) ? lastPos[1] : lastPos.y) - sceneCenterOffset.y,
-                    (Array.isArray(lastPos) ? lastPos[2] : lastPos.z) - sceneCenterOffset.z
-                );
-                endSphere.position.copy(lastPosVec);
-                endSphere.visible = false;
-                scene.add(endSphere);
-                trajectoryColmapSpheres.push(endSphere);
-                
-                // 終了点の向き矢印（COLMAP）
-                if (lastPose.rotation) {
-                    const endArrow = createOrientationArrow(lastPosVec, lastPose.rotation, 0xff00ff, 0.15);
-                    endArrow.visible = false;
-                    scene.add(endArrow);
-                    trajectoryColmapArrows.push(endArrow);
-                }
-                
-                document.getElementById('btn-trajectory-colmap').disabled = false;
-                
-                console.log(`COLMAP Trajectory loaded: ${poses.length} poses (${data.coordinate_system})`);
-                
-            } catch (error) {
-                console.error('COLMAP Trajectory load error:', error);
-                document.getElementById('btn-trajectory').disabled = true;
-            }
-        }
-        
-        // ============================================================
-        // Display Modes
-        // ============================================================
-        function setDisplayMode(mode) {
-            displayMode = mode;
-            
-            // Update buttons
-            document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
-            const btnId = mode === 'trajectory-colmap' ? 'btn-trajectory-colmap' : `btn-${mode}`;
-            const btn = document.getElementById(btnId);
-            if (btn) btn.classList.add('active');
-            
-            // デフォルトで全て非表示
-            if (pointCloud) pointCloud.visible = false;
-            if (mesh) mesh.visible = false;
-            rfidMarkers.forEach(m => m.visible = false);
-            if (trajectoryLine) trajectoryLine.visible = false;
-            trajectorySpheres.forEach(s => s.visible = false);
-            trajectoryArrows.forEach(a => a.visible = false);
-            if (trajectoryColmapLine) trajectoryColmapLine.visible = false;
-            trajectoryColmapSpheres.forEach(s => s.visible = false);
-            trajectoryColmapArrows.forEach(a => a.visible = false);
-            
-            // モードに応じて表示
-            if (mode === 'pointcloud') {
-                if (pointCloud) pointCloud.visible = true;
-            } else if (mode === 'mesh') {
-                if (mesh) mesh.visible = true;
-            } else if (mode === 'rfid') {
-                if (pointCloud) pointCloud.visible = true;
-                if (mesh) mesh.visible = true;
-                rfidMarkers.forEach(m => m.visible = true);
-            } else if (mode === 'trajectory') {
-                // ARCore軌跡（黄色）
-                if (trajectoryLine) trajectoryLine.visible = true;
-                trajectorySpheres.forEach(s => s.visible = true);
-                trajectoryArrows.forEach(a => a.visible = true);  // 向き矢印
-                if (mesh) mesh.visible = true;
-                rfidMarkers.forEach(m => m.visible = true);
-            } else if (mode === 'trajectory-colmap') {
-                // COLMAP軌跡（シアン）
-                if (trajectoryColmapLine) trajectoryColmapLine.visible = true;
-                trajectoryColmapSpheres.forEach(s => s.visible = true);
-                trajectoryColmapArrows.forEach(a => a.visible = true);  // 向き矢印
-                // ARCore軌跡も一緒に表示して比較
-                if (trajectoryLine) trajectoryLine.visible = true;
-                trajectorySpheres.forEach(s => s.visible = true);
-                trajectoryArrows.forEach(a => a.visible = true);  // 向き矢印
-                if (mesh) mesh.visible = true;
-            }
-            
-            // カメラを調整
-            if (mode === 'mesh' && mesh) {
-                fitCameraToObject(mesh);
-            } else if (mode === 'pointcloud' && pointCloud) {
-                fitCameraToObject(pointCloud);
-            } else if (mode === 'trajectory' && trajectoryLine) {
-                fitCameraToObject(trajectoryLine);
-            } else if (mode === 'trajectory-colmap' && trajectoryColmapLine) {
-                fitCameraToObject(trajectoryColmapLine);
-            }
-        }
-        
-        // ============================================================
-        // Camera
-        // ============================================================
-        function fitCameraToObject(object) {
-            const bbox = new THREE.Box3().setFromObject(object);
-            const center = bbox.getCenter(new THREE.Vector3());
-            const size = bbox.getSize(new THREE.Vector3());
-            
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const fov = camera.fov * (Math.PI / 180);
-            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-            cameraZ *= 1.5;
-            
-            camera.position.set(center.x + cameraZ * 0.5, center.y + cameraZ * 0.5, center.z + cameraZ);
-            controls.target.copy(center);
-            controls.update();
-        }
-        
-        // ============================================================
-        // Event Handlers
-        // ============================================================
-        document.getElementById('job-select').addEventListener('change', (e) => {
-            loadJob(e.target.value);
-        });
-        
-        document.getElementById('btn-pointcloud').addEventListener('click', () => setDisplayMode('pointcloud'));
-        document.getElementById('btn-mesh').addEventListener('click', () => setDisplayMode('mesh'));
-        document.getElementById('btn-rfid').addEventListener('click', () => setDisplayMode('rfid'));
-        document.getElementById('btn-trajectory').addEventListener('click', () => setDisplayMode('trajectory'));
-        document.getElementById('btn-trajectory-colmap').addEventListener('click', () => setDisplayMode('trajectory-colmap'));
-        
-        // Rotation sliders - update display values
-        ['x', 'y', 'z'].forEach(axis => {
-            const slider = document.getElementById(`rot-${axis}`);
-            const valDisplay = document.getElementById(`rot-${axis}-val`);
-            slider.addEventListener('input', () => {
-                valDisplay.textContent = `${slider.value}°`;
-            });
-        });
-        
-        // Apply rotation button
-        document.getElementById('apply-rotation').addEventListener('click', async () => {
-            if (!currentJobId) {
-                alert('ジョブを選択してください');
-                return;
-            }
-            
-            const rotX = parseFloat(document.getElementById('rot-x').value);
-            const rotY = parseFloat(document.getElementById('rot-y').value);
-            const rotZ = parseFloat(document.getElementById('rot-z').value);
-            
-            console.log(`Applying rotation: X=${rotX}°, Y=${rotY}°, Z=${rotZ}°`);
-            
-            // Send rotation request to server
-            showLoading();
-            try {
-                const response = await fetch(`${API_BASE}/scenes/${currentJobId}/apply_rotation`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rot_x: rotX, rot_y: rotY, rot_z: rotZ })
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Server error: ${response.status}`);
-                }
-                
-                const result = await response.json();
-                console.log('Rotation applied:', result);
-                
-                // Reload the mesh
-                await loadMesh(currentJobId);
-                hideLoading();
-                setDisplayMode('mesh');
-            } catch (error) {
-                console.error('Rotation apply error:', error);
-                alert(`回転適用エラー: ${error.message}`);
-                hideLoading();
-            }
-        });
-        
-        // Reset rotation button
-        document.getElementById('reset-rotation').addEventListener('click', async () => {
-            // Reset sliders
-            ['x', 'y', 'z'].forEach(axis => {
-                document.getElementById(`rot-${axis}`).value = 0;
-                document.getElementById(`rot-${axis}-val`).textContent = '0°';
-            });
-            
-            if (!currentJobId) return;
-            
-            // Reset mesh to original
-            showLoading();
-            try {
-                const response = await fetch(`${API_BASE}/scenes/${currentJobId}/reset_rotation`, {
-                    method: 'POST'
-                });
-                
-                if (response.ok) {
-                    await loadMesh(currentJobId);
-                }
-                hideLoading();
-                setDisplayMode('mesh');
-            } catch (error) {
-                console.error('Reset error:', error);
-                hideLoading();
-            }
-        });
-        
-        // Load mesh function (refactored for reuse)
-        async function loadMesh(jobId) {
-            const url = `${API_BASE}/scenes/${jobId}/mesh.ply?t=${Date.now()}`;
-            const loader = new THREE.PLYLoader();
-            const geometry = await new Promise((resolve, reject) => {
-                loader.load(url, resolve, undefined, reject);
-            });
-            
-            if (mesh) {
-                scene.remove(mesh);
-                mesh.geometry.dispose();
-                mesh.material.dispose();
-            }
-            
-            geometry.computeVertexNormals();
-            const material = new THREE.MeshStandardMaterial({
-                vertexColors: geometry.hasAttribute('color'),
-                side: THREE.DoubleSide,
-                metalness: 0.1,
-                roughness: 0.8
-            });
-            
-            if (!geometry.hasAttribute('color')) {
-                material.color = new THREE.Color(0.6, 0.6, 0.6);
-            }
-            
-            mesh = new THREE.Mesh(geometry, material);
-            
-            geometry.computeBoundingBox();
-            const center = new THREE.Vector3();
-            geometry.boundingBox.getCenter(center);
-            mesh.position.sub(center);
-            sceneCenterOffset = center.clone();
-            
-            scene.add(mesh);
-            mesh.visible = true;
-        }
-        
-        // ============================================================
-        // Initialize
-        // ============================================================
-        initViewer();
-        loadJobList();
-    </script>
-</body>
-</html>
                                             const color = geometry.attributes.color;
                                             newColors[i * 3] = color.getX(idx);
                                             newColors[i * 3 + 1] = color.getY(idx);
@@ -3191,3 +1803,696 @@
 </body>
 </html>
 
+                                            newColors[i * 3] = color.getX(idx);
+                                            newColors[i * 3 + 1] = color.getY(idx);
+                                            newColors[i * 3 + 2] = color.getZ(idx);
+                                        }
+                                    }
+                                    
+                                    geometry = new THREE.BufferGeometry();
+                                    geometry.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
+                                    if (newColors) {
+                                        geometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
+                                    }
+                                    
+                                    console.log(`Downsampled to ${indices.length} points`);
+                                }
+                                
+                                // Colors (height-based if no vertex colors)
+                                let colors = geometry.attributes.color;
+                                
+                                if (!colors) {
+                                    const positions = geometry.attributes.position;
+                                    const colorsArray = new Float32Array(positions.count * 3);
+                                    const bbox = geometry.boundingBox;
+                                    const minY = bbox.min.y, maxY = bbox.max.y;
+                                    const rangeY = maxY - minY || 1;
+                                    
+                                    for (let i = 0; i < positions.count; i++) {
+                                        const y = positions.getY(i);
+                                        const t = (y - minY) / rangeY;
+                                        const color = new THREE.Color();
+                                        color.setHSL(0.5 - t * 0.3, 0.8, 0.5);
+                                        colorsArray[i * 3] = color.r;
+                                        colorsArray[i * 3 + 1] = color.g;
+                                        colorsArray[i * 3 + 2] = color.b;
+                                    }
+                                    geometry.setAttribute('color', new THREE.BufferAttribute(colorsArray, 3));
+                                }
+                                
+                                const material = new THREE.PointsMaterial({
+                                    size: 0.005,
+                                    vertexColors: true,
+                                    sizeAttenuation: true
+                                });
+                                
+                                pointCloud = new THREE.Points(geometry, material);
+                                scene.add(pointCloud);
+                                
+                                const pointCount = geometry.attributes.position.count;
+                                document.getElementById('point-count').textContent = pointCount.toLocaleString();
+                                
+                                fitCameraToObject(pointCloud);
+                                console.log('Point cloud loaded successfully');
+                                resolve();
+                            } catch (error) {
+                                console.error('Error processing point cloud:', error);
+                                reject(error);
+                            }
+                        },
+                        (progress) => {
+                            // ローディング進捗
+                            if (progress.lengthComputable) {
+                                const percent = (progress.loaded / progress.total) * 100;
+                                console.log(`Loading point cloud: ${percent.toFixed(1)}%`);
+                            }
+                        },
+                        (error) => {
+                            console.error('PLY load error:', error);
+                            reject(error);
+                        }
+                    );
+                } catch (error) {
+                    console.error('Error loading point cloud:', error);
+                    reject(error);
+                }
+            });
+        }
+        
+        async function loadMesh(jobId) {
+            return new Promise((resolve, reject) => {
+                try {
+                    const loader = new THREE.PLYLoader();
+                    const url = `${API_BASE}/scenes/${jobId}/mesh.ply`;
+                    
+                    console.log('Loading mesh from:', url);
+                    
+                    loader.load(url,
+                        (geometry) => {
+                            try {
+                                console.log('Mesh loaded, processing...');
+                                
+                                geometry.computeVertexNormals();
+                                geometry.computeBoundingBox();
+                                
+                                // Center - オフセットを保存してから中心化
+                                const center = new THREE.Vector3();
+                                geometry.boundingBox.getCenter(center);
+                                sceneCenterOffset.copy(center); // 中心オフセットを保存
+                                geometry.translate(-center.x, -center.y, -center.z);
+                                console.log(`Mesh center offset: (${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)})`);
+                                
+                                // メッシュのサイズ確認
+                                const triangleCount = geometry.index ? geometry.index.count / 3 : 0;
+                                console.log(`Mesh loaded: ${triangleCount.toLocaleString()} triangles`);
+                                
+                                if (triangleCount === 0) {
+                                    console.error('ERROR: Mesh has no triangles!');
+                                    reject(new Error('Mesh has no triangles'));
+                                    return;
+                                }
+                                
+                                // 大きなメッシュの場合は警告
+                                const MAX_TRIANGLES = 1000000; // 100万三角形まで
+                                if (triangleCount > MAX_TRIANGLES) {
+                                    console.warn(`Large mesh detected (${triangleCount.toLocaleString()} triangles). This may cause performance issues.`);
+                                }
+                                
+                                // メッシュに色がある場合はそれを使用、なければデフォルト色
+                                let material;
+                                if (geometry.attributes.color) {
+                                    material = new THREE.MeshStandardMaterial({
+                                        vertexColors: true,
+                                        roughness: 0.6,
+                                        metalness: 0.2,
+                                        flatShading: false,
+                                        side: THREE.DoubleSide
+                                    });
+                                } else {
+                                    material = new THREE.MeshStandardMaterial({
+                                        color: 0x00c896,
+                                        roughness: 0.6,
+                                        metalness: 0.2,
+                                        flatShading: false,
+                                        side: THREE.DoubleSide
+                                    });
+                                }
+                                
+                                mesh = new THREE.Mesh(geometry, material);
+                                // メッシュは読み込まれたら表示する（デフォルトで表示）
+                                mesh.visible = true;
+                                scene.add(mesh);
+                                
+                                const faceCount = geometry.index ? geometry.index.count / 3 : 0;
+                                document.getElementById('face-count').textContent = Math.floor(faceCount).toLocaleString();
+                                
+                                // カメラをメッシュに合わせる
+                                fitCameraToObject(mesh);
+                                
+                                console.log('Mesh loaded successfully');
+                                resolve();
+                            } catch (error) {
+                                console.error('Error processing mesh:', error);
+                                reject(error);
+                            }
+                        },
+                        (progress) => {
+                            // ローディング進捗
+                            if (progress.lengthComputable) {
+                                const percent = (progress.loaded / progress.total) * 100;
+                                console.log(`Loading mesh: ${percent.toFixed(1)}%`);
+                            }
+                        },
+                        (error) => {
+                            console.error('Mesh load error:', error);
+                            reject(error);
+                        }
+                    );
+                } catch (error) {
+                    console.error('Error loading mesh:', error);
+                    reject(error);
+                }
+            });
+        }
+        
+        async function loadRFID(jobId) {
+            try {
+                const response = await fetch(`${API_BASE}/scenes/${jobId}/rfid_positions.json`);
+                const data = await response.json();
+                
+                const rfidList = document.getElementById('rfid-list');
+                rfidList.innerHTML = '';
+                
+                // データ構造の対応: detections または tags
+                const detections = data.detections || data.tags || [];
+                
+                if (detections.length === 0) {
+                    rfidList.innerHTML = '<div style="color: #666; font-size: 11px;">No RFID data</div>';
+                    document.getElementById('rfid-count').textContent = '0';
+                    return;
+                }
+                
+                detections.forEach((detection, index) => {
+                    // Create marker - 大きめのオレンジ球体
+                    const geometry = new THREE.SphereGeometry(0.05, 16, 16);
+                    const material = new THREE.MeshBasicMaterial({ 
+                        color: 0xff6600,
+                        transparent: true,
+                        opacity: 0.9
+                    });
+                    const marker = new THREE.Mesh(geometry, material);
+                    
+                    // 位置情報の取得（position または pose.position）
+                    // ARCore座標系で保存されているので、sceneCenterOffsetを適用
+                    let pos = { x: 0, y: 0, z: 0 };
+                    if (detection.position) {
+                        pos = detection.position;
+                    } else if (detection.pose && detection.pose.position) {
+                        pos = detection.pose.position;
+                    }
+                    
+                    // sceneCenterOffsetを適用（メッシュ/点群と同じ座標系に）
+                    marker.position.set(
+                        pos.x - sceneCenterOffset.x,
+                        pos.y - sceneCenterOffset.y,
+                        pos.z - sceneCenterOffset.z
+                    );
+                    
+                    marker.visible = false;
+                    scene.add(marker);
+                    rfidMarkers.push(marker);
+                    
+                    // Debug: RFID位置をコンソールに出力
+                    console.log(`RFID ${index}: original (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}) -> adjusted (${marker.position.x.toFixed(2)}, ${marker.position.y.toFixed(2)}, ${marker.position.z.toFixed(2)})`);
+                    console.log(`  sceneCenterOffset: (${sceneCenterOffset.x.toFixed(2)}, ${sceneCenterOffset.y.toFixed(2)}, ${sceneCenterOffset.z.toFixed(2)})`);
+                    
+                    // Add to list
+                    const item = document.createElement('div');
+                    item.className = 'rfid-item';
+                    const tagId = detection.tag_id || detection.epc || `Tag ${index + 1}`;
+                    const rssi = detection.rssi !== undefined ? `${detection.rssi} dBm` : 'N/A';
+                    item.innerHTML = `
+                        <div class="rfid-epc">${tagId}</div>
+                        <div class="rfid-rssi">RSSI: ${rssi}</div>
+                    `;
+                    rfidList.appendChild(item);
+                });
+                
+                document.getElementById('rfid-count').textContent = detections.length.toString();
+                
+            } catch (error) {
+                console.error('RFID load error:', error);
+            }
+        }
+        
+        // クォータニオンから向き矢印を作成するヘルパー関数
+        function createOrientationArrow(position, quaternion, color, length = 0.15) {
+            // quaternion: [x, y, z, w] または {x, y, z, w}
+            let qx, qy, qz, qw;
+            if (Array.isArray(quaternion)) {
+                [qx, qy, qz, qw] = quaternion;
+            } else {
+                qx = quaternion.x;
+                qy = quaternion.y;
+                qz = quaternion.z;
+                qw = quaternion.w;
+            }
+            
+            // THREE.Quaternionを作成
+            const quat = new THREE.Quaternion(qx, qy, qz, qw);
+            
+            // カメラの前方向（-Z軸）を変換
+            const forward = new THREE.Vector3(0, 0, -1);
+            forward.applyQuaternion(quat);
+            forward.normalize();
+            
+            // ArrowHelperを作成
+            const arrow = new THREE.ArrowHelper(
+                forward,        // 方向
+                position,       // 始点
+                length,         // 長さ
+                color,          // 色
+                length * 0.3,   // 矢頭の長さ
+                length * 0.15   // 矢頭の幅
+            );
+            
+            return arrow;
+        }
+        
+        async function loadTrajectory(jobId) {
+            try {
+                const response = await fetch(`${API_BASE}/scenes/${jobId}/trajectory.json`);
+                const data = await response.json();
+                
+                const poses = data.poses || [];
+                
+                if (poses.length === 0) {
+                    document.getElementById('trajectory-count').textContent = '0';
+                    return;
+                }
+                
+                // メッシュ読み込み時に保存した中心オフセットを使用
+                console.log(`Applying trajectory offset: (${sceneCenterOffset.x.toFixed(3)}, ${sceneCenterOffset.y.toFixed(3)}, ${sceneCenterOffset.z.toFixed(3)})`);
+                
+                // 軌跡ラインを作成 (position: {x,y,z}、配列 [x,y,z]、または直接 {x,y,z} の全形式に対応)
+                const positions = [];
+                poses.forEach(pose => {
+                    const pos = pose.position || pose;
+                    const x = Array.isArray(pos) ? pos[0] : pos.x;
+                    const y = Array.isArray(pos) ? pos[1] : pos.y;
+                    const z = Array.isArray(pos) ? pos[2] : pos.z;
+                    positions.push(
+                        x - sceneCenterOffset.x,
+                        y - sceneCenterOffset.y,
+                        z - sceneCenterOffset.z
+                    );
+                });
+                
+                const lineGeometry = new THREE.BufferGeometry();
+                lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color: 0xffff00,
+                    linewidth: 2
+                });
+                
+                trajectoryLine = new THREE.Line(lineGeometry, lineMaterial);
+                trajectoryLine.visible = false;
+                scene.add(trajectoryLine);
+                
+                // 開始点と終了点にマーカーを追加
+                const startGeom = new THREE.SphereGeometry(0.02, 16, 16);
+                const startMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // 緑=開始
+                const startSphere = new THREE.Mesh(startGeom, startMat);
+                const firstPose = poses[0];
+                const firstPos = firstPose.position || firstPose;
+                const firstPosVec = new THREE.Vector3(
+                    (Array.isArray(firstPos) ? firstPos[0] : firstPos.x) - sceneCenterOffset.x,
+                    (Array.isArray(firstPos) ? firstPos[1] : firstPos.y) - sceneCenterOffset.y,
+                    (Array.isArray(firstPos) ? firstPos[2] : firstPos.z) - sceneCenterOffset.z
+                );
+                startSphere.position.copy(firstPosVec);
+                startSphere.visible = false;
+                scene.add(startSphere);
+                trajectorySpheres.push(startSphere);
+                
+                // 開始点の向き矢印
+                if (firstPose.rotation) {
+                    const startArrow = createOrientationArrow(firstPosVec, firstPose.rotation, 0x00ff00, 0.15);
+                    startArrow.visible = false;
+                    scene.add(startArrow);
+                    trajectoryArrows.push(startArrow);
+                }
+                
+                const endGeom = new THREE.SphereGeometry(0.02, 16, 16);
+                const endMat = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // 赤=終了
+                const endSphere = new THREE.Mesh(endGeom, endMat);
+                const lastPose = poses[poses.length - 1];
+                const lastPos = lastPose.position || lastPose;
+                const lastPosVec = new THREE.Vector3(
+                    (Array.isArray(lastPos) ? lastPos[0] : lastPos.x) - sceneCenterOffset.x,
+                    (Array.isArray(lastPos) ? lastPos[1] : lastPos.y) - sceneCenterOffset.y,
+                    (Array.isArray(lastPos) ? lastPos[2] : lastPos.z) - sceneCenterOffset.z
+                );
+                endSphere.position.copy(lastPosVec);
+                endSphere.visible = false;
+                scene.add(endSphere);
+                trajectorySpheres.push(endSphere);
+                
+                // 終了点の向き矢印
+                if (lastPose.rotation) {
+                    const endArrow = createOrientationArrow(lastPosVec, lastPose.rotation, 0xff0000, 0.15);
+                    endArrow.visible = false;
+                    scene.add(endArrow);
+                    trajectoryArrows.push(endArrow);
+                }
+                
+                document.getElementById('trajectory-count').textContent = poses.length.toString();
+                document.getElementById('btn-trajectory').disabled = false;
+                
+                console.log(`ARCore Trajectory loaded: ${poses.length} poses`);
+                
+            } catch (error) {
+                console.error('ARCore Trajectory load error:', error);
+            }
+        }
+        
+        async function loadTrajectoryColmap(jobId) {
+            try {
+                const response = await fetch(`${API_BASE}/scenes/${jobId}/trajectory_colmap.json`);
+                if (!response.ok) {
+                    console.log('COLMAP trajectory not available');
+                    return;
+                }
+                const data = await response.json();
+                
+                const poses = data.poses || [];
+                
+                if (poses.length === 0) {
+                    return;
+                }
+                
+                // メッシュ読み込み時に保存した中心オフセットを使用
+                console.log(`Applying COLMAP trajectory offset: (${sceneCenterOffset.x.toFixed(3)}, ${sceneCenterOffset.y.toFixed(3)}, ${sceneCenterOffset.z.toFixed(3)})`);
+                
+                // 軌跡ラインを作成（配列形式とオブジェクト形式の両方に対応）
+                const positions = [];
+                poses.forEach(pose => {
+                    const pos = pose.position || pose;
+                    const x = Array.isArray(pos) ? pos[0] : pos.x;
+                    const y = Array.isArray(pos) ? pos[1] : pos.y;
+                    const z = Array.isArray(pos) ? pos[2] : pos.z;
+                    positions.push(
+                        x - sceneCenterOffset.x,
+                        y - sceneCenterOffset.y,
+                        z - sceneCenterOffset.z
+                    );
+                });
+                
+                const lineGeometry = new THREE.BufferGeometry();
+                lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                
+                // COLMAP軌跡はシアン色
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color: 0x00ffff,
+                    linewidth: 2
+                });
+                
+                trajectoryColmapLine = new THREE.Line(lineGeometry, lineMaterial);
+                trajectoryColmapLine.visible = false;
+                scene.add(trajectoryColmapLine);
+                
+                // 開始点と終了点にマーカーを追加
+                const startGeom = new THREE.SphereGeometry(0.025, 16, 16);
+                const startMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa }); // ターコイズ=開始
+                const startSphere = new THREE.Mesh(startGeom, startMat);
+                const firstPose = poses[0];
+                const firstPos = firstPose.position || firstPose;
+                const firstPosVec = new THREE.Vector3(
+                    (Array.isArray(firstPos) ? firstPos[0] : firstPos.x) - sceneCenterOffset.x,
+                    (Array.isArray(firstPos) ? firstPos[1] : firstPos.y) - sceneCenterOffset.y,
+                    (Array.isArray(firstPos) ? firstPos[2] : firstPos.z) - sceneCenterOffset.z
+                );
+                startSphere.position.copy(firstPosVec);
+                startSphere.visible = false;
+                scene.add(startSphere);
+                trajectoryColmapSpheres.push(startSphere);
+                
+                // 開始点の向き矢印（COLMAP）
+                if (firstPose.rotation) {
+                    const startArrow = createOrientationArrow(firstPosVec, firstPose.rotation, 0x00ffaa, 0.15);
+                    startArrow.visible = false;
+                    scene.add(startArrow);
+                    trajectoryColmapArrows.push(startArrow);
+                }
+                
+                const endGeom = new THREE.SphereGeometry(0.025, 16, 16);
+                const endMat = new THREE.MeshBasicMaterial({ color: 0xff00ff }); // マゼンタ=終了
+                const endSphere = new THREE.Mesh(endGeom, endMat);
+                const lastPose = poses[poses.length - 1];
+                const lastPos = lastPose.position || lastPose;
+                const lastPosVec = new THREE.Vector3(
+                    (Array.isArray(lastPos) ? lastPos[0] : lastPos.x) - sceneCenterOffset.x,
+                    (Array.isArray(lastPos) ? lastPos[1] : lastPos.y) - sceneCenterOffset.y,
+                    (Array.isArray(lastPos) ? lastPos[2] : lastPos.z) - sceneCenterOffset.z
+                );
+                endSphere.position.copy(lastPosVec);
+                endSphere.visible = false;
+                scene.add(endSphere);
+                trajectoryColmapSpheres.push(endSphere);
+                
+                // 終了点の向き矢印（COLMAP）
+                if (lastPose.rotation) {
+                    const endArrow = createOrientationArrow(lastPosVec, lastPose.rotation, 0xff00ff, 0.15);
+                    endArrow.visible = false;
+                    scene.add(endArrow);
+                    trajectoryColmapArrows.push(endArrow);
+                }
+                
+                document.getElementById('btn-trajectory-colmap').disabled = false;
+                
+                console.log(`COLMAP Trajectory loaded: ${poses.length} poses (${data.coordinate_system})`);
+                
+            } catch (error) {
+                console.error('COLMAP Trajectory load error:', error);
+                document.getElementById('btn-trajectory').disabled = true;
+            }
+        }
+        
+        // ============================================================
+        // Display Modes
+        // ============================================================
+        function setDisplayMode(mode) {
+            displayMode = mode;
+            
+            // Update buttons
+            document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
+            const btnId = mode === 'trajectory-colmap' ? 'btn-trajectory-colmap' : `btn-${mode}`;
+            const btn = document.getElementById(btnId);
+            if (btn) btn.classList.add('active');
+            
+            // デフォルトで全て非表示
+            if (pointCloud) pointCloud.visible = false;
+            if (mesh) mesh.visible = false;
+            rfidMarkers.forEach(m => m.visible = false);
+            if (trajectoryLine) trajectoryLine.visible = false;
+            trajectorySpheres.forEach(s => s.visible = false);
+            trajectoryArrows.forEach(a => a.visible = false);
+            if (trajectoryColmapLine) trajectoryColmapLine.visible = false;
+            trajectoryColmapSpheres.forEach(s => s.visible = false);
+            trajectoryColmapArrows.forEach(a => a.visible = false);
+            
+            // モードに応じて表示
+            if (mode === 'pointcloud') {
+                if (pointCloud) pointCloud.visible = true;
+            } else if (mode === 'mesh') {
+                if (mesh) mesh.visible = true;
+            } else if (mode === 'rfid') {
+                if (pointCloud) pointCloud.visible = true;
+                if (mesh) mesh.visible = true;
+                rfidMarkers.forEach(m => m.visible = true);
+            } else if (mode === 'trajectory') {
+                // ARCore軌跡（黄色）
+                if (trajectoryLine) trajectoryLine.visible = true;
+                trajectorySpheres.forEach(s => s.visible = true);
+                trajectoryArrows.forEach(a => a.visible = true);  // 向き矢印
+                if (mesh) mesh.visible = true;
+                rfidMarkers.forEach(m => m.visible = true);
+            } else if (mode === 'trajectory-colmap') {
+                // COLMAP軌跡（シアン）
+                if (trajectoryColmapLine) trajectoryColmapLine.visible = true;
+                trajectoryColmapSpheres.forEach(s => s.visible = true);
+                trajectoryColmapArrows.forEach(a => a.visible = true);  // 向き矢印
+                // ARCore軌跡も一緒に表示して比較
+                if (trajectoryLine) trajectoryLine.visible = true;
+                trajectorySpheres.forEach(s => s.visible = true);
+                trajectoryArrows.forEach(a => a.visible = true);  // 向き矢印
+                if (mesh) mesh.visible = true;
+            }
+            
+            // カメラを調整
+            if (mode === 'mesh' && mesh) {
+                fitCameraToObject(mesh);
+            } else if (mode === 'pointcloud' && pointCloud) {
+                fitCameraToObject(pointCloud);
+            } else if (mode === 'trajectory' && trajectoryLine) {
+                fitCameraToObject(trajectoryLine);
+            } else if (mode === 'trajectory-colmap' && trajectoryColmapLine) {
+                fitCameraToObject(trajectoryColmapLine);
+            }
+        }
+        
+        // ============================================================
+        // Camera
+        // ============================================================
+        function fitCameraToObject(object) {
+            const bbox = new THREE.Box3().setFromObject(object);
+            const center = bbox.getCenter(new THREE.Vector3());
+            const size = bbox.getSize(new THREE.Vector3());
+            
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const fov = camera.fov * (Math.PI / 180);
+            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+            cameraZ *= 1.5;
+            
+            camera.position.set(center.x + cameraZ * 0.5, center.y + cameraZ * 0.5, center.z + cameraZ);
+            controls.target.copy(center);
+            controls.update();
+        }
+        
+        // ============================================================
+        // Event Handlers
+        // ============================================================
+        document.getElementById('job-select').addEventListener('change', (e) => {
+            loadJob(e.target.value);
+        });
+        
+        document.getElementById('btn-pointcloud').addEventListener('click', () => setDisplayMode('pointcloud'));
+        document.getElementById('btn-mesh').addEventListener('click', () => setDisplayMode('mesh'));
+        document.getElementById('btn-rfid').addEventListener('click', () => setDisplayMode('rfid'));
+        document.getElementById('btn-trajectory').addEventListener('click', () => setDisplayMode('trajectory'));
+        document.getElementById('btn-trajectory-colmap').addEventListener('click', () => setDisplayMode('trajectory-colmap'));
+        
+        // Rotation sliders - update display values
+        ['x', 'y', 'z'].forEach(axis => {
+            const slider = document.getElementById(`rot-${axis}`);
+            const valDisplay = document.getElementById(`rot-${axis}-val`);
+            slider.addEventListener('input', () => {
+                valDisplay.textContent = `${slider.value}°`;
+            });
+        });
+        
+        // Apply rotation button
+        document.getElementById('apply-rotation').addEventListener('click', async () => {
+            if (!currentJobId) {
+                alert('ジョブを選択してください');
+                return;
+            }
+            
+            const rotX = parseFloat(document.getElementById('rot-x').value);
+            const rotY = parseFloat(document.getElementById('rot-y').value);
+            const rotZ = parseFloat(document.getElementById('rot-z').value);
+            
+            console.log(`Applying rotation: X=${rotX}°, Y=${rotY}°, Z=${rotZ}°`);
+            
+            // Send rotation request to server
+            showLoading();
+            try {
+                const response = await fetch(`${API_BASE}/scenes/${currentJobId}/apply_rotation`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rot_x: rotX, rot_y: rotY, rot_z: rotZ })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                console.log('Rotation applied:', result);
+                
+                // Reload the mesh
+                await loadMesh(currentJobId);
+                hideLoading();
+                setDisplayMode('mesh');
+            } catch (error) {
+                console.error('Rotation apply error:', error);
+                alert(`回転適用エラー: ${error.message}`);
+                hideLoading();
+            }
+        });
+        
+        // Reset rotation button
+        document.getElementById('reset-rotation').addEventListener('click', async () => {
+            // Reset sliders
+            ['x', 'y', 'z'].forEach(axis => {
+                document.getElementById(`rot-${axis}`).value = 0;
+                document.getElementById(`rot-${axis}-val`).textContent = '0°';
+            });
+            
+            if (!currentJobId) return;
+            
+            // Reset mesh to original
+            showLoading();
+            try {
+                const response = await fetch(`${API_BASE}/scenes/${currentJobId}/reset_rotation`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    await loadMesh(currentJobId);
+                }
+                hideLoading();
+                setDisplayMode('mesh');
+            } catch (error) {
+                console.error('Reset error:', error);
+                hideLoading();
+            }
+        });
+        
+        // Load mesh function (refactored for reuse)
+        async function loadMesh(jobId) {
+            const url = `${API_BASE}/scenes/${jobId}/mesh.ply?t=${Date.now()}`;
+            const loader = new THREE.PLYLoader();
+            const geometry = await new Promise((resolve, reject) => {
+                loader.load(url, resolve, undefined, reject);
+            });
+            
+            if (mesh) {
+                scene.remove(mesh);
+                mesh.geometry.dispose();
+                mesh.material.dispose();
+            }
+            
+            geometry.computeVertexNormals();
+            const material = new THREE.MeshStandardMaterial({
+                vertexColors: geometry.hasAttribute('color'),
+                side: THREE.DoubleSide,
+                metalness: 0.1,
+                roughness: 0.8
+            });
+            
+            if (!geometry.hasAttribute('color')) {
+                material.color = new THREE.Color(0.6, 0.6, 0.6);
+            }
+            
+            mesh = new THREE.Mesh(geometry, material);
+            
+            geometry.computeBoundingBox();
+            const center = new THREE.Vector3();
+            geometry.boundingBox.getCenter(center);
+            mesh.position.sub(center);
+            sceneCenterOffset = center.clone();
+            
+            scene.add(mesh);
+            mesh.visible = true;
+        }
+        
+        // ============================================================
+        // Initialize
+        // ============================================================
+        initViewer();
+        loadJobList();
+    </script>
+</body>
+</html>
