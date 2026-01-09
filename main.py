@@ -498,7 +498,11 @@ async def get_session_image(job_id: str, image_name: str):
 @app.get("/scenes/{job_id}/trajectory_colmap.json")
 async def get_trajectory_colmap(job_id: str):
     """COLMAP軌跡JSON（ARCore座標系に変換済み）"""
-    path = RESULTS_DIR / job_id / "trajectory_colmap_transformed.json"
+    # 補正済み軌跡を優先
+    path = RESULTS_DIR / job_id / "trajectory_colmap_corrected.json"
+    if not path.exists():
+        # 変換済み軌跡にフォールバック
+        path = RESULTS_DIR / job_id / "trajectory_colmap_transformed.json"
     if not path.exists():
         # 未生成の場合は404
         raise HTTPException(404, "COLMAP trajectory not found")
