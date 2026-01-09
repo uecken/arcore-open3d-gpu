@@ -1,13 +1,91 @@
-# 方式2: COLMAP pose_prior による実装計画
+# 方式2: COLMAP pose_prior による実装
 
 **作成日時:** 2026-01-09 13:02:00  
-**ステータス:** 調査完了、未実装
+**更新日時:** 2026-01-09 15:15:00  
+**ステータス:** ✅ 実装完了、検証済み
 
 ---
 
-## 1. 重要な発見
+## 1. 概要
 
-### COLMAPには `pose_priors` テーブルが存在
+ARCoreのポーズ情報を`pose_priors`テーブルに挿入し、`pose_prior_mapper`を使用してSfMを実行する方式。
+
+### 実装状態
+
+| 項目 | 状態 |
+|------|------|
+| pose_priors挿入 | ✅ 完了 |
+| pose_prior_mapper実行 | ✅ 完了 |
+| 座標変換（COLMAP→ARCore） | ✅ 完了 |
+| config.yaml設定 | ✅ 完了 |
+| テスト実行 | ✅ 完了 |
+
+### 設定方法
+
+```yaml
+# config.yaml
+colmap:
+  use_pose_priors: true  # 方式2を有効化
+  pose_prior:
+    position_std_x: 0.1  # ARCore位置の標準偏差（10cm）
+    position_std_y: 0.1
+    position_std_z: 0.1
+    use_robust_loss: true
+```
+
+---
+
+## 2. 検証結果（2026-01-09 15:10）
+
+### テストジョブ: `6d24a96e_method2_20260109_135750`
+
+| 項目 | 値 |
+|------|-----|
+| 挿入ポーズ数 | 294 |
+| 登録画像数 | 262/294 (89%) |
+| 点群 | 168,726点 |
+| メッシュ頂点 | 428,850 |
+| メッシュ三角形 | 854,449 |
+
+### 座標変換パラメータ
+
+| パラメータ | 値 |
+|-----------|-----|
+| スケール係数 | 0.118 |
+| 平均誤差 | 0.55m |
+| 中央値誤差 | 0.43m |
+| スケール比（変換後） | 1.69x |
+
+### ユーザー評価
+
+> "見た目のメッシュは方式2のほうが少し綺麗です。軌跡もそこまでずれていない。"
+
+---
+
+## 3. 方式比較
+
+| 方式 | メッシュ品質 | 軌跡精度 | 処理時間 | 設定 |
+|------|------------|---------|---------|------|
+| **方式2** | ✅ 綺麗 | 0.55m | 約6分 | `use_pose_priors: true` |
+| 方式3改良 | 若干歪み | **0.14m** | 数秒 | `use_pose_priors: false` |
+
+### 長所・短所
+
+#### 方式2の長所 ✅
+1. **メッシュが綺麗** - COLMAPがARCore拘束付きで最適化
+2. **歪みなし** - セグメント補正による不連続がない
+3. **一貫性** - 最初からARCore座標系に近い形で生成
+
+#### 方式2の短所 ❌
+1. **スケール精度** - 1.69xのずれが残る
+2. **位置精度** - 0.55m（方式3の0.14mより劣る）
+3. **回転情報なし** - pose_priorsに回転は格納不可
+
+---
+
+## 4. 技術詳細
+
+### COLMAPの `pose_priors` テーブル
 
 ```sql
 CREATE TABLE pose_priors (
@@ -22,75 +100,25 @@ CREATE TABLE pose_priors (
 );
 ```
 
+### 実装コード（`pipeline/colmap_mvs.py`）
+
+```python
+def _insert_pose_priors(self, parser, database_path):
+    """ARCoreのポーズをpose_priorsテーブルに挿入"""
+    # ARCore座標系 → COLMAP座標系の変換
+    # ARCore: Y軸上向き、Z軸後方
+    # COLMAP: Y軸下向き、Z軸前方
+    colmap_position = [
+        float(position[0]),      # X: 同じ
+        float(-position[1]),     # Y: 反転
+        float(-position[2])      # Z: 反転
+    ]
+    # ... 挿入処理
+```
+
 ### `pose_prior_mapper` コマンド
 
 ```bash
-colmap pose_prior_mapper \
-    --database_path <db> \
-    --image_path <images> \
-    --input_path <sparse> \
-    --output_path <output> \
-    --prior_position_std_x 0.1 \  # 位置の標準偏差（メートル）
-    --prior_position_std_y 0.1 \
-    --prior_position_std_z 0.1
-```
-
----
-
-## 2. 実装手順（案）
-
-### Step 1: ARCoreポーズをpose_priorsに挿入
-
-```python
-import sqlite3
-import struct
-import numpy as np
-
-def add_pose_priors(db_path, arcore_poses):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # 画像IDとframe_dataのマッピングを取得
-    cursor.execute("""
-        SELECT i.image_id, i.name, fd.data_id
-        FROM images i
-        JOIN frame_data fd ON fd.data_id = i.image_id
-    """)
-    image_mapping = {row[1]: (row[0], row[2]) for row in cursor.fetchall()}
-    
-    for image_name, pose in arcore_poses.items():
-        if image_name not in image_mapping:
-            continue
-        
-        image_id, data_id = image_mapping[image_name]
-        position = pose['position']  # [x, y, z]
-        
-        # 位置をBLOB形式に変換
-        position_blob = struct.pack('ddd', *position)
-        
-        # 共分散行列（単位行列 * 0.01 = 10cm標準偏差）
-        cov = np.eye(3) * 0.01
-        cov_blob = struct.pack('d'*9, *cov.flatten())
-        
-        # 重力方向（Y軸下向き）
-        gravity = [0, -1, 0]
-        gravity_blob = struct.pack('ddd', *gravity)
-        
-        cursor.execute("""
-            INSERT INTO pose_priors 
-            (corr_data_id, corr_sensor_id, corr_sensor_type, 
-             position, position_covariance, gravity, coordinate_system)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (data_id, 1, 0, position_blob, cov_blob, gravity_blob, 0))
-    
-    conn.commit()
-    conn.close()
-```
-
-### Step 2: pose_prior_mapper を実行
-
-```bash
-# 通常のmapperの代わりにpose_prior_mapperを使用
 colmap pose_prior_mapper \
     --database_path colmap/database.db \
     --image_path images/ \
@@ -98,111 +126,39 @@ colmap pose_prior_mapper \
     --prior_position_std_x 0.1 \
     --prior_position_std_y 0.1 \
     --prior_position_std_z 0.1 \
-    --Mapper.ba_refine_focal_length 0
-```
-
-### Step 3: 通常のMVSパイプライン
-
-```bash
-# Image Undistorter
-colmap image_undistorter ...
-
-# Patch Match Stereo
-colmap patch_match_stereo ...
-
-# Stereo Fusion
-colmap stereo_fusion ...
+    --use_robust_loss_on_prior_position 1 \
+    --overwrite_priors_covariance 1
 ```
 
 ---
 
-## 3. 座標系変換
+## 5. 使い分けの指針
 
-### ARCore → COLMAP 座標変換
+| 優先事項 | 推奨方式 |
+|---------|---------|
+| **メッシュの見た目** | 方式2 |
+| **RFIDタグ位置精度** | 方式3改良 |
+| **処理速度** | 方式3改良 |
+| **歪みのないメッシュ** | 方式2 |
 
-| | ARCore | COLMAP |
-|--|--------|--------|
-| X軸 | 右 | 右 |
-| Y軸 | **上** | **下** |
-| Z軸 | 後ろ | 前 |
-| 単位 | メートル | メートル（priorの場合） |
+### 推奨ワークフロー
 
-```python
-def arcore_to_colmap_position(arcore_pos):
-    """ARCore位置をCOLMAP座標系に変換"""
-    x, y, z = arcore_pos
-    return [x, -y, -z]  # Y軸とZ軸を反転
-```
+1. **メッシュ可視化用**: 方式2（`use_pose_priors: true`）
+2. **RFID位置測定用**: 方式3改良（`use_pose_priors: false` + `use_arcore_rotation: true`）
 
 ---
 
-## 4. 期待される利点
+## 6. Viewerで確認
 
-1. **メッシュが歪まない** - 最初からARCore座標系で生成
-2. **軌跡が一致** - ARCoreポーズを拘束条件として使用
-3. **精度向上** - Bundle Adjustmentで最適化されつつARCoreに近い結果
-
----
-
-## 5. 潜在的な問題
-
-### 問題1: position_covariance の設定
-
-ARCoreの位置精度に応じた共分散を設定する必要がある。
-
-- **小さすぎる** → ARCoreの誤差を伝播、悪影響
-- **大きすぎる** → priorが無視される
-
-**推奨:** σ = 0.05〜0.1m（5〜10cm）
-
-### 問題2: coordinate_system の値
-
-COLMAPのソースコードを確認して正しい値を設定する必要がある。
-
-```cpp
-enum class CoordinateSystem {
-    UNDEFINED = 0,
-    WGS84 = 1,  // GPS用
-    // ...
-};
-```
-
-### 問題3: 回転情報
-
-`pose_priors`テーブルには回転（向き）の列がない。
-位置のみの拘束で十分か検証が必要。
+| Job ID | 方式 | URL |
+|--------|------|-----|
+| 6d24a96e_method2_* | 方式2 | http://localhost:8002/viewer?job=6d24a96e_method2_20260109_135750 |
+| 6d24a96e_2sec_rot | 方式3改良 | http://localhost:8002/viewer?job=6d24a96e_2sec_rot |
 
 ---
 
-## 6. 実装の優先度
+## 7. 今後の改善案
 
-| 項目 | 優先度 | 理由 |
-|------|--------|------|
-| pose_priors挿入 | 高 | コア機能 |
-| 座標変換 | 高 | 必須 |
-| 共分散設定 | 中 | チューニング |
-| エラー処理 | 中 | 安定性 |
-| 回転対応 | 低 | 位置のみで十分な可能性 |
-
----
-
-## 7. 次のステップ
-
-1. [ ] pose_priorsテーブルへの挿入コードを実装
-2. [ ] 小規模データでテスト
-3. [ ] pose_prior_mapperの動作確認
-4. [ ] 6d24a96eデータで検証
-5. [ ] 方式3との比較
-
----
-
-## 8. 参考コマンド
-
-```bash
-# pose_prior_mapperのオプション確認
-colmap pose_prior_mapper --help
-
-# データベースの内容確認
-sqlite3 database.db "SELECT * FROM pose_priors LIMIT 5"
-```
-
+1. **position_std の最適化** - より小さい値（0.05m）でテスト
+2. **ハイブリッド方式** - 方式2でメッシュ生成 + 方式3で軌跡補正
+3. **回転情報の別経路追加** - 軌跡JSONにARCore回転を追加（実装済み）

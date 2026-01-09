@@ -89,15 +89,29 @@ depth_estimation:
 colmap:
   path: "colmap"
   
-  # SfMスキップモード（実験的）
+  # 方式2: ARCoreポーズをpose_priorsとして使用
+  # COLMAP SfMにARCoreの位置情報を拘束条件として渡す
+  # これにより、メッシュがARCore座標系に近い形で生成される
+  use_pose_priors: true  # テスト用に有効化
+  
+  # pose_prior設定（use_pose_priors=true時に使用）
+  pose_prior:
+    # 位置の標準偏差（メートル）- ARCoreの精度に基づく
+    # 小さいほどARCoreに強く従う、大きいほどCOLMAPの自由度が増す
+    position_std_x: 0.1  # 10cm
+    position_std_y: 0.1
+    position_std_z: 0.1
+    # ロバスト損失を使用（外れ値に強い）
+    use_robust_loss: true
+  
+  # SfMスキップモード（実験的）- 非推奨
   # true: ARCoreのポーズを直接使用（SfMをスキップ）- 現在未対応
-  # false: COLMAPのSfMでポーズを算出（推奨）
+  # false: COLMAPのSfMでポーズを算出
   use_arcore_poses: false
   
   # マッチング方式（"exhaustive" または "sequential"）
   # - exhaustive: 全画像ペアをマッチング（高精度だが低速）
   # - sequential: 隣接画像のみマッチング（高速、ARCore連続撮影に最適）
-  # 注意: use_arcore_poses=true の場合、マッチングはスキップされます
   matcher: "exhaustive"
   
   # sequential_matcher設定

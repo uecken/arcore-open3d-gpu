@@ -359,6 +359,233 @@ class COLMAPMVSPipeline:
         print(f"✓ Trajectory saved: {len(poses)} poses (with rotation)")
         return len(poses)
     
+    def _insert_pose_priors(
+        self,
+        parser: ARCoreDataParser,
+        database_path: Path
+    ) -> int:
+        """ARCoreのポーズをpose_priorsテーブルに挿入（方式2）
+        
+        COLMAPのpose_prior_mapperで使用するための位置拘束を設定
+        """
+        import sqlite3
+        import struct
+        
+        conn = sqlite3.connect(database_path)
+        cursor = conn.cursor()
+        
+        # 既存のpose_priorsをクリア
+        cursor.execute("DELETE FROM pose_priors")
+        
+        # 画像名とimage_id/data_idのマッピングを取得
+        cursor.execute("""
+            SELECT i.image_id, i.name, fd.data_id, fd.sensor_id
+            FROM images i
+            JOIN frame_data fd ON fd.data_id = i.image_id
+        """)
+        image_mapping = {}
+        for row in cursor.fetchall():
+            # frame_79274840173634.jpg → 79274840173634
+            timestamp = row[1].replace('frame_', '').replace('.jpg', '')
+            image_mapping[timestamp] = {
+                'image_id': row[0],
+                'data_id': row[2],
+                'sensor_id': row[3]
+            }
+        
+        # ARCoreポーズを取得
+        arcore_poses = {}
+        for frame in parser.frames:
+            if frame.pose:
+                ts = str(frame.timestamp) if hasattr(frame, 'timestamp') else None
+                if ts:
+                    pose_matrix = frame.pose.to_matrix()
+                    position = pose_matrix[:3, 3]
+                    arcore_poses[ts] = position
+        
+        inserted = 0
+        for ts, position in arcore_poses.items():
+            if ts not in image_mapping:
+                continue
+            
+            mapping = image_mapping[ts]
+            
+            # ARCore座標系 → COLMAP座標系の変換
+            # ARCore: Y軸上向き、Z軸後方
+            # COLMAP: Y軸下向き、Z軸前方
+            colmap_position = [
+                float(position[0]),      # X: 同じ
+                float(-position[1]),     # Y: 反転
+                float(-position[2])      # Z: 反転
+            ]
+            
+            # 位置をBLOB形式に変換 (3x float64)
+            position_blob = struct.pack('ddd', *colmap_position)
+            
+            # 共分散行列（単位行列 * σ^2）
+            # config.yamlの設定を使用
+            pose_prior_config = self.config.get('colmap', {}).get('pose_prior', {})
+            std_x = pose_prior_config.get('position_std_x', 0.1)
+            std_y = pose_prior_config.get('position_std_y', 0.1)
+            std_z = pose_prior_config.get('position_std_z', 0.1)
+            
+            cov = np.array([
+                [std_x**2, 0, 0],
+                [0, std_y**2, 0],
+                [0, 0, std_z**2]
+            ])
+            cov_blob = struct.pack('d'*9, *cov.flatten())
+            
+            # 重力方向（COLMAP座標系でY軸下向き）
+            gravity = [0.0, 1.0, 0.0]
+            gravity_blob = struct.pack('ddd', *gravity)
+            
+            # coordinate_system: 0 = UNDEFINED (GPS以外)
+            coordinate_system = 0
+            
+            cursor.execute("""
+                INSERT INTO pose_priors 
+                (corr_data_id, corr_sensor_id, corr_sensor_type, 
+                 position, position_covariance, gravity, coordinate_system)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                mapping['data_id'],
+                mapping['sensor_id'],
+                0,  # sensor_type: 0 = IMAGE
+                position_blob,
+                cov_blob,
+                gravity_blob,
+                coordinate_system
+            ))
+            inserted += 1
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✓ Pose priors inserted: {inserted} poses")
+        return inserted
+    
+    def run_pose_prior_mapper(
+        self,
+        session_dir: Path,
+        colmap_dir: Path,
+        progress_callback: Callable[[int, str], None] = None
+    ) -> bool:
+        """COLMAPのpose_prior_mapperを実行（方式2）
+        
+        ARCoreのポーズを拘束条件としてSfMを実行
+        """
+        if progress_callback:
+            progress_callback(10, "Running COLMAP pose_prior_mapper (SfM with ARCore constraints)...")
+        
+        images_dir = session_dir / "images"
+        database_path = colmap_dir / "database.db"
+        sparse_dir = colmap_dir / "sparse"
+        sparse_dir.mkdir(parents=True, exist_ok=True)
+        
+        env = os.environ.copy()
+        env["QT_QPA_PLATFORM"] = "offscreen"
+        
+        try:
+            import re
+            import os as os_module
+            
+            num_threads = os_module.cpu_count() or 4
+            
+            # pose_prior設定を取得
+            pose_prior_config = self.config.get('colmap', {}).get('pose_prior', {})
+            std_x = pose_prior_config.get('position_std_x', 0.1)
+            std_y = pose_prior_config.get('position_std_y', 0.1)
+            std_z = pose_prior_config.get('position_std_z', 0.1)
+            use_robust = pose_prior_config.get('use_robust_loss', True)
+            
+            # GPU/マルチスレッドオプション
+            gpu_options = []
+            if self.use_gpu:
+                gpu_options = [
+                    "--Mapper.ba_use_gpu", "1",
+                    "--Mapper.ba_gpu_index", "0",
+                ]
+                print(f"  Using GPU for Bundle Adjustment")
+            
+            cmd = [
+                self.colmap_path, "pose_prior_mapper",
+                "--database_path", str(database_path),
+                "--image_path", str(images_dir),
+                "--output_path", str(sparse_dir),
+                "--Mapper.num_threads", str(num_threads),
+                "--prior_position_std_x", str(std_x),
+                "--prior_position_std_y", str(std_y),
+                "--prior_position_std_z", str(std_z),
+                "--use_robust_loss_on_prior_position", "1" if use_robust else "0",
+                "--overwrite_priors_covariance", "1",  # config.yamlの設定を使用
+                *gpu_options
+            ]
+            print(f"  Using {num_threads} CPU threads for pose_prior_mapper")
+            print(f"  Prior position std: ({std_x}, {std_y}, {std_z})m")
+            
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+                bufsize=1
+            )
+            
+            last_progress = 10
+            registered_images = 0
+            
+            for line in process.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                reg_match = re.search(r'Registering image #(\d+)', line)
+                if reg_match:
+                    registered_images = int(reg_match.group(1))
+                    progress = 10 + min(int(registered_images / 50), 20)
+                    if progress > last_progress and progress_callback:
+                        progress_callback(progress, f"SfM (with priors): {registered_images} images")
+                        last_progress = progress
+                    if registered_images % 50 == 0:
+                        print(f"  SfM (with priors): {registered_images} images registered")
+                
+                if "Bundle adjustment" in line:
+                    if progress_callback:
+                        progress_callback(25, "Bundle adjustment with pose priors...")
+                    print("  Bundle adjustment with pose priors...")
+            
+            process.wait()
+            
+            if process.returncode != 0:
+                print(f"Error: pose_prior_mapper failed (exit code {process.returncode})")
+                return False
+            
+            # sparseモデルが存在するか確認
+            model_dirs = [d for d in sparse_dir.iterdir() if d.is_dir() and d.name.isdigit()]
+            if not model_dirs:
+                print("Error: pose_prior_mapper did not create any sparse model")
+                return False
+            
+            largest_model = self._find_largest_sparse_model(sparse_dir)
+            print(f"✓ SfM completed with pose priors (model: {largest_model})")
+            
+            if progress_callback:
+                progress_callback(30, "SfM with pose priors completed")
+            
+            return True
+            
+        except subprocess.TimeoutExpired:
+            print("Error: pose_prior_mapper timed out")
+            process.kill()
+            return False
+        except Exception as e:
+            print(f"Error running pose_prior_mapper: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     def run_feature_extractor(
         self,
         session_dir: Path,
@@ -1123,13 +1350,14 @@ class COLMAPMVSPipeline:
         colmap_dir.mkdir(parents=True, exist_ok=True)
         database_path = colmap_dir / "database.db"
         
-        # ARCoreポーズ直接使用モードの確認
+        # 処理モードの確認
         colmap_config = self.config.get('colmap', {})
         use_arcore_poses = colmap_config.get('use_arcore_poses', False)
+        use_pose_priors = colmap_config.get('use_pose_priors', False)
         
         if use_arcore_poses:
-            # ARCoreポーズを直接使用（SfMスキップモード）
-            print("\n=== ARCore Poses Mode ===")
+            # ARCoreポーズを直接使用（SfMスキップモード）- 非推奨
+            print("\n=== ARCore Poses Mode (Legacy) ===")
             print("  Using ARCore VIO poses directly (skipping COLMAP SfM)")
             
             # Step 1: 特徴点抽出（Patch Match Stereoに必要）
@@ -1158,9 +1386,43 @@ class COLMAPMVSPipeline:
                 print("Warning: Point triangulation failed, Patch Match Stereo may not work correctly")
             else:
                 print("  ✓ 3D points triangulated")
+        
+        elif use_pose_priors:
+            # 方式2: ARCoreポーズをpose_priorsとして使用
+            print("\n=== COLMAP SfM with Pose Priors (Method 2) ===")
+            print("  Using ARCore positions as constraints for SfM")
+            
+            # Step 1: 特徴点抽出
+            if not self.run_feature_extractor(session_dir, database_path, parser.intrinsics, progress_callback):
+                return None, None
+            
+            # Step 2: ARCoreポーズをpose_priorsテーブルに挿入
+            if progress_callback:
+                progress_callback(7, "Inserting ARCore pose priors...")
+            inserted = self._insert_pose_priors(parser, database_path)
+            if inserted == 0:
+                print("Warning: No pose priors inserted, falling back to standard SfM")
+                use_pose_priors = False
+            else:
+                print(f"  ✓ {inserted} pose priors inserted")
+            
+            # Step 3: 特徴点マッチング
+            if not self.run_feature_matcher(database_path, progress_callback):
+                return None, None
+            
+            # Step 4: pose_prior_mapperを実行
+            if use_pose_priors:
+                if not self.run_pose_prior_mapper(session_dir, colmap_dir, progress_callback):
+                    print("Warning: pose_prior_mapper failed, trying standard mapper...")
+                    if not self.run_mapper(session_dir, colmap_dir, progress_callback):
+                        return None, None
+            else:
+                if not self.run_mapper(session_dir, colmap_dir, progress_callback):
+                    return None, None
+        
         else:
-            # 通常のSfMモード
-            print("\n=== COLMAP SfM Mode ===")
+            # 通常のSfMモード（方式3）
+            print("\n=== COLMAP SfM Mode (Standard) ===")
             print("  Running full SfM (Structure from Motion)")
             
             # Step 1: 特徴点抽出
@@ -1207,30 +1469,47 @@ class COLMAPMVSPipeline:
         
         print(f"✓ Loaded point cloud: {len(pcd.points)} points")
         
-        # 後処理1: 座標変換 + カメラからの距離でフィルタリング
+        # 後処理1: COLMAP→ARCore座標変換（常に実行）
         colmap_config = self.config.get('colmap', {})
-        distance_filter = colmap_config.get('distance_filter', {})
         
-        if distance_filter.get('enable', False):
-            max_distance = distance_filter.get('max_distance', 3.0)
-            min_distance = distance_filter.get('min_distance', 0.1)
-            
+        if progress_callback:
+            progress_callback(84, "Computing coordinate transform (COLMAP → ARCore)...")
+        
+        # COLMAP→ARCore座標変換を計算
+        transform = self._compute_colmap_to_arcore_transform(parser, colmap_dir)
+        
+        # 変換をファイルに保存
+        if transform is not None:
+            transform_path = result_dir / "colmap_to_arcore_transform.json"
+            import json
+            transform_data = {
+                'scale': float(transform['scale']),
+                'rotation': transform['rotation'].tolist(),
+                'colmap_centroid': transform['colmap_centroid'].tolist(),
+                'arcore_centroid': transform['arcore_centroid'].tolist(),
+                'mean_error': float(transform['mean_error']),
+                'median_error': float(transform['median_error']),
+            }
+            with open(transform_path, 'w') as f:
+                json.dump(transform_data, f, indent=2)
+            print(f"  Transform saved: scale={transform['scale']:.4f}, mean_error={transform['mean_error']:.3f}m")
+        
+        if transform is not None:
             if progress_callback:
-                progress_callback(84, "Computing coordinate transform...")
+                progress_callback(85, "Transforming point cloud to ARCore coordinates...")
             
-            # COLMAP→ARCore座標変換を計算
-            transform = self._compute_colmap_to_arcore_transform(parser, colmap_dir)
+            points = np.asarray(pcd.points)
+            colors = np.asarray(pcd.colors) if pcd.has_colors() else None
+            normals = np.asarray(pcd.normals) if pcd.has_normals() else None
             
-            if transform is not None:
-                if progress_callback:
-                    progress_callback(85, f"Filtering points: {min_distance}m - {max_distance}m from cameras...")
-                
-                points = np.asarray(pcd.points)
-                colors = np.asarray(pcd.colors) if pcd.has_colors() else None
-                normals = np.asarray(pcd.normals) if pcd.has_normals() else None
-                
-                # 点群をARCore座標系に変換
-                points_arcore = self._transform_points_to_arcore(points, transform)
+            # 点群をARCore座標系に変換
+            points_arcore = self._transform_points_to_arcore(points, transform)
+            
+            # オプション: カメラからの距離でフィルタリング
+            distance_filter = colmap_config.get('distance_filter', {})
+            if distance_filter.get('enable', False):
+                max_distance = distance_filter.get('max_distance', 3.0)
+                min_distance = distance_filter.get('min_distance', 0.1)
                 
                 # ARCoreカメラ位置を取得
                 camera_positions = self._get_camera_positions(parser)
@@ -1245,23 +1524,29 @@ class COLMAPMVSPipeline:
                     mask = (distances >= min_distance) & (distances <= max_distance)
                     
                     filtered_points = points_arcore[mask]
-                    pcd_filtered = o3d.geometry.PointCloud()
-                    pcd_filtered.points = o3d.utility.Vector3dVector(filtered_points)
+                    filtered_colors = colors[mask] if colors is not None and len(colors) == len(points) else None
+                    filtered_normals = normals[mask] if normals is not None and len(normals) == len(points) else None
                     
-                    if colors is not None and len(colors) == len(points):
-                        pcd_filtered.colors = o3d.utility.Vector3dVector(colors[mask])
-                    if normals is not None and len(normals) == len(points):
-                        # 法線も変換（回転のみ）
-                        normals_transformed = normals @ transform['rotation']
-                        pcd_filtered.normals = o3d.utility.Vector3dVector(normals_transformed[mask])
-                    
-                    print(f"  Camera distance filter ({min_distance}-{max_distance}m): {len(pcd.points):,} → {len(pcd_filtered.points):,} points")
-                    print(f"  Coordinate system: ARCore")
-                    pcd = pcd_filtered
-                else:
-                    print("  Warning: No camera positions, using original points")
-            else:
-                print("  Warning: Transform failed, using original points")
+                    print(f"  Camera distance filter ({min_distance}-{max_distance}m): {len(points_arcore):,} → {len(filtered_points):,} points")
+                    points_arcore = filtered_points
+                    colors = filtered_colors
+                    normals = filtered_normals
+            
+            # 変換済み点群を作成
+            pcd_transformed = o3d.geometry.PointCloud()
+            pcd_transformed.points = o3d.utility.Vector3dVector(points_arcore)
+            
+            if colors is not None and len(colors) == len(points_arcore):
+                pcd_transformed.colors = o3d.utility.Vector3dVector(colors)
+            if normals is not None and len(normals) == len(points_arcore):
+                # 法線も変換（回転のみ）
+                normals_transformed = normals @ transform['rotation']
+                pcd_transformed.normals = o3d.utility.Vector3dVector(normals_transformed)
+            
+            print(f"  Coordinate system: ARCore (transformed)")
+            pcd = pcd_transformed
+        else:
+            print("  Warning: Transform failed, using original COLMAP coordinates")
         
         # 後処理2: 統計的外れ値除去
         if progress_callback:
