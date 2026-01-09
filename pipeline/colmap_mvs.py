@@ -319,7 +319,7 @@ class COLMAPMVSPipeline:
         return transformed
     
     def _save_trajectory(self, parser: ARCoreDataParser, result_dir: Path) -> int:
-        """ARCoreカメラ軌跡を保存（点群と同じ座標系）"""
+        """ARCoreカメラ軌跡を保存（点群と同じ座標系、回転情報付き）"""
         import json
         
         poses = []
@@ -332,12 +332,16 @@ class COLMAPMVSPipeline:
                 
                 # 重複を除去（0.001m以上移動した場合のみ追加）
                 if prev_pos is None or np.linalg.norm(position - prev_pos) > 0.001:
+                    # ARCore回転（クォータニオン）を取得
+                    quat = frame.pose.quaternion  # [qx, qy, qz, qw]
+                    
                     poses.append({
                         "position": {
                             "x": float(position[0]),
                             "y": float(position[1]),
                             "z": float(position[2])
                         },
+                        "rotation": [float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3])],
                         "timestamp": frame.timestamp if hasattr(frame, 'timestamp') else None
                     })
                     prev_pos = position
@@ -345,9 +349,14 @@ class COLMAPMVSPipeline:
         # 保存
         trajectory_path = result_dir / "trajectory.json"
         with open(trajectory_path, 'w') as f:
-            json.dump({"poses": poses, "count": len(poses), "coordinate_system": "arcore"}, f, indent=2)
+            json.dump({
+                "poses": poses, 
+                "count": len(poses), 
+                "coordinate_system": "arcore",
+                "rotation_format": "quaternion_xyzw"
+            }, f, indent=2)
         
-        print(f"✓ Trajectory saved: {len(poses)} poses")
+        print(f"✓ Trajectory saved: {len(poses)} poses (with rotation)")
         return len(poses)
     
     def run_feature_extractor(

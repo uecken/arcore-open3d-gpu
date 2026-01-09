@@ -140,6 +140,10 @@ colmap_depth:
 
 # 座標系位置合わせ設定
 alignment:
+  # ARCore回転を直接使用（推奨）
+  # COLMAPの回転推定は55°以上の誤差があるため、ARCoreの高精度な回転を使用
+  use_arcore_rotation: true
+  
   # セグメント別局所補正
   # COLMAPとARCoreの軌跡のずれを時間セグメントごとに補正
   segment_correction:
