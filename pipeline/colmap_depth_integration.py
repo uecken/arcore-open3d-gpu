@@ -25,7 +25,10 @@ try:
 except ImportError:
     HAS_OPEN3D = False
 
-from .arcore_data_parser import ARCoreDataParser
+try:
+    from utils.arcore_parser import ARCoreDataParser
+except ImportError:
+    from .arcore_data_parser import ARCoreDataParser
 
 
 class COLMAPDepthIntegration:
@@ -66,6 +69,8 @@ class COLMAPDepthIntegration:
         """
         COLMAP深度マップを読み込む
         
+        COLMAP形式: テキストヘッダー "HEIGHT&WIDTH&CHANNELS&" + float32バイナリデータ
+        
         Args:
             path: .geometric.bin または .photometric.bin ファイルパス
         
@@ -74,18 +79,48 @@ class COLMAPDepthIntegration:
         """
         try:
             with open(path, 'rb') as f:
-                # ヘッダー読み込み
-                width, height, channels = struct.unpack('iii', f.read(12))
-                
-                if channels != 1:
-                    print(f"⚠ Unexpected channels: {channels} (expected 1)")
-                
-                # 深度データ読み込み
-                num_pixels = width * height * channels
-                depth_data = np.frombuffer(f.read(num_pixels * 4), dtype=np.float32)
-                depth = depth_data.reshape(height, width)
-                
-                return depth
+                data = f.read()
+            
+            # テキストヘッダーを解析 (例: "480&640&1&")
+            # ヘッダー終端を探す (3つの&の後)
+            header_end = 0
+            ampersand_count = 0
+            for i, byte in enumerate(data):
+                if byte == ord('&'):
+                    ampersand_count += 1
+                    if ampersand_count == 3:
+                        header_end = i + 1
+                        break
+            
+            if header_end == 0:
+                print(f"⚠ Invalid COLMAP depth map format: {path}")
+                return None
+            
+            # ヘッダーをパース
+            header_str = data[:header_end].decode('ascii')
+            parts = header_str.split('&')
+            if len(parts) < 3:
+                print(f"⚠ Invalid header format: {header_str}")
+                return None
+            
+            height = int(parts[0])
+            width = int(parts[1])
+            channels = int(parts[2])
+            
+            if channels != 1:
+                print(f"⚠ Unexpected channels: {channels} (expected 1)")
+            
+            # 深度データ読み込み
+            depth_data = np.frombuffer(data[header_end:], dtype=np.float32)
+            expected_size = height * width * channels
+            
+            if len(depth_data) < expected_size:
+                print(f"⚠ Insufficient depth data: {len(depth_data)} < {expected_size}")
+                return None
+            
+            depth = depth_data[:expected_size].reshape(height, width)
+            
+            return depth
                 
         except Exception as e:
             print(f"Error reading COLMAP depth map {path}: {e}")
@@ -324,8 +359,23 @@ class COLMAPDepthIntegration:
         
         # ARCoreデータを読み込み
         parser = ARCoreDataParser(session_dir)
-        arcore_poses = parser.get_poses_by_timestamp()
-        intrinsics = parser.get_camera_intrinsics()
+        if not parser.parse():
+            print("Error: Failed to parse ARCore data")
+            return None, None, stats
+        
+        # ポーズを辞書形式に変換 (timestamp -> 4x4 matrix)
+        arcore_poses = {}
+        for timestamp, pose in parser.poses.items():
+            matrix = pose.to_matrix()
+            arcore_poses[str(timestamp)] = matrix
+        
+        # カメラ内部パラメータ
+        intrinsics = {
+            'fx': parser.intrinsics.fx if parser.intrinsics else 500,
+            'fy': parser.intrinsics.fy if parser.intrinsics else 500,
+            'cx': parser.intrinsics.cx if parser.intrinsics else 320,
+            'cy': parser.intrinsics.cy if parser.intrinsics else 240,
+        }
         
         if not arcore_poses:
             print("Error: No ARCore poses found")
@@ -386,16 +436,17 @@ class COLMAPDepthIntegration:
             print(f"Error creating TSDF Volume: {e}")
             return None, None, stats
         
-        # カメラ内部パラメータ
+        # カメラ内部パラメータ（CPUに置く必要がある）
         fx = intrinsics.get('fx', 500)
         fy = intrinsics.get('fy', 500)
         cx = intrinsics.get('cx', 320)
         cy = intrinsics.get('cy', 240)
         
+        cpu_device = o3c.Device("CPU:0")
         intrinsic_tensor = o3c.Tensor(
             [[fx, 0, cx], [0, fy, cy], [0, 0, 1]],
             dtype=o3c.float64,
-            device=self.device
+            device=cpu_device
         )
         
         if progress_callback:
@@ -438,31 +489,34 @@ class COLMAPDepthIntegration:
             
             arcore_pose = arcore_poses[timestamp]
             
-            # GPU Tensorに変換
+            # GPU Tensor/Imageに変換
             depth_tensor = o3c.Tensor(
                 depth_scaled.astype(np.float32),
                 dtype=o3c.float32,
                 device=self.device
             )
             
-            # 外部パラメータ（ARCoreポーズ）
+            # ImageオブジェクトとしてラップOpen3D T.geometry用）
+            depth_image = o3d.t.geometry.Image(depth_tensor)
+            
+            # 外部パラメータ（ARCoreポーズ）- CPUに置く必要がある
             extrinsic = o3c.Tensor(
                 np.linalg.inv(arcore_pose).astype(np.float64),
                 dtype=o3c.float64,
-                device=self.device
+                device=cpu_device
             )
             
             try:
-                # ブロック座標を計算
+                # ブロック座標を計算（Imageオブジェクトを使用）
                 frustum_block_coords = vbg.compute_unique_block_coordinates(
-                    depth_tensor, intrinsic_tensor, extrinsic,
+                    depth_image, intrinsic_tensor, extrinsic,
                     depth_scale=1.0, depth_max=self.depth_max
                 )
                 
-                # TSDF統合
+                # TSDF統合（Imageオブジェクトを使用）
                 vbg.integrate(
                     block_coords=frustum_block_coords,
-                    depth=depth_tensor,
+                    depth=depth_image,
                     intrinsic=intrinsic_tensor,
                     extrinsic=extrinsic,
                     depth_scale=1.0,
@@ -534,7 +588,45 @@ class COLMAPDepthIntegration:
             print(f"  Mesh saved: {stats['vertex_count']} vertices, {stats['triangle_count']} triangles")
             
         except Exception as e:
-            print(f"Error extracting mesh: {e}")
+            print(f"  GPU mesh extraction failed: {e}")
+            print(f"  Trying CPU mesh extraction...")
+            
+            try:
+                # CPUに転送してメッシュ抽出
+                vbg_cpu = vbg.cpu()
+                mesh = vbg_cpu.extract_triangle_mesh(weight_threshold=self.mesh_weight_threshold)
+                mesh_legacy = mesh.to_legacy()
+                
+                mesh_legacy.compute_vertex_normals()
+                
+                mesh_path = output_dir / "mesh.ply"
+                o3d.io.write_triangle_mesh(str(mesh_path), mesh_legacy)
+                
+                stats['vertex_count'] = len(mesh_legacy.vertices)
+                stats['triangle_count'] = len(mesh_legacy.triangles)
+                print(f"  Mesh saved (CPU): {stats['vertex_count']} vertices, {stats['triangle_count']} triangles")
+                
+            except Exception as e2:
+                print(f"  CPU mesh extraction also failed: {e2}")
+                print(f"  Creating mesh from point cloud using Poisson reconstruction...")
+                
+                try:
+                    # 点群からPoissonでメッシュ生成
+                    if pcd_legacy and len(pcd_legacy.points) > 100:
+                        pcd_legacy.estimate_normals()
+                        mesh_legacy, _ = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+                            pcd_legacy, depth=9
+                        )
+                        
+                        mesh_path = output_dir / "mesh.ply"
+                        o3d.io.write_triangle_mesh(str(mesh_path), mesh_legacy)
+                        
+                        stats['vertex_count'] = len(mesh_legacy.vertices)
+                        stats['triangle_count'] = len(mesh_legacy.triangles)
+                        print(f"  Mesh saved (Poisson): {stats['vertex_count']} vertices, {stats['triangle_count']} triangles")
+                        
+                except Exception as e3:
+                    print(f"  Poisson reconstruction failed: {e3}")
         
         # 変換パラメータを保存
         transform_data = {

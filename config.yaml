@@ -122,7 +122,7 @@ colmap:
 # 方法C: スケール補正付きCOLMAP深度統合
 colmap_depth:
   # GPU TSDF統合設定
-  voxel_size: 0.01      # 1cm解像度
+  voxel_size: 0.02      # 2cm解像度 (メモリ節約)
   block_resolution: 16
   block_count: 100000
   
