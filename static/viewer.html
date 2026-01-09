@@ -468,8 +468,10 @@
         let rfidMarkers = [];
         let trajectoryLine = null;
         let trajectorySpheres = [];
+        let trajectoryArrows = [];  // カメラ向き矢印
         let trajectoryColmapLine = null;
         let trajectoryColmapSpheres = [];
+        let trajectoryColmapArrows = [];  // COLMAP カメラ向き矢印
         let currentJobId = null;
         let availableFiles = {};
         let displayMode = 'pointcloud'; // pointcloud, mesh, rfid, trajectory, trajectory_colmap
@@ -902,6 +904,16 @@
             });
             trajectorySpheres = [];
             
+            // 矢印のクリーンアップ
+            trajectoryArrows.forEach(a => {
+                scene.remove(a);
+                a.line?.geometry?.dispose();
+                a.line?.material?.dispose();
+                a.cone?.geometry?.dispose();
+                a.cone?.material?.dispose();
+            });
+            trajectoryArrows = [];
+            
             // COLMAP軌跡のクリーンアップ
             if (trajectoryColmapLine) {
                 scene.remove(trajectoryColmapLine);
@@ -915,6 +927,16 @@
                 s.material?.dispose();
             });
             trajectoryColmapSpheres = [];
+            
+            // COLMAP矢印のクリーンアップ
+            trajectoryColmapArrows.forEach(a => {
+                scene.remove(a);
+                a.line?.geometry?.dispose();
+                a.line?.material?.dispose();
+                a.cone?.geometry?.dispose();
+                a.cone?.material?.dispose();
+            });
+            trajectoryColmapArrows = [];
             
             document.getElementById('point-count').textContent = '0';
             document.getElementById('face-count').textContent = '0';
@@ -1218,6 +1240,40 @@
             }
         }
         
+        // クォータニオンから向き矢印を作成するヘルパー関数
+        function createOrientationArrow(position, quaternion, color, length = 0.15) {
+            // quaternion: [x, y, z, w] または {x, y, z, w}
+            let qx, qy, qz, qw;
+            if (Array.isArray(quaternion)) {
+                [qx, qy, qz, qw] = quaternion;
+            } else {
+                qx = quaternion.x;
+                qy = quaternion.y;
+                qz = quaternion.z;
+                qw = quaternion.w;
+            }
+            
+            // THREE.Quaternionを作成
+            const quat = new THREE.Quaternion(qx, qy, qz, qw);
+            
+            // カメラの前方向（-Z軸）を変換
+            const forward = new THREE.Vector3(0, 0, -1);
+            forward.applyQuaternion(quat);
+            forward.normalize();
+            
+            // ArrowHelperを作成
+            const arrow = new THREE.ArrowHelper(
+                forward,        // 方向
+                position,       // 始点
+                length,         // 長さ
+                color,          // 色
+                length * 0.3,   // 矢頭の長さ
+                length * 0.15   // 矢頭の幅
+            );
+            
+            return arrow;
+        }
+        
         async function loadTrajectory(jobId) {
             try {
                 const response = await fetch(`${API_BASE}/scenes/${jobId}/trajectory.json`);
@@ -1233,14 +1289,17 @@
                 // メッシュ読み込み時に保存した中心オフセットを使用
                 console.log(`Applying trajectory offset: (${sceneCenterOffset.x.toFixed(3)}, ${sceneCenterOffset.y.toFixed(3)}, ${sceneCenterOffset.z.toFixed(3)})`);
                 
-                // 軌跡ラインを作成 (position: {x,y,z} または直接 {x,y,z} の両方に対応)
+                // 軌跡ラインを作成 (position: {x,y,z}、配列 [x,y,z]、または直接 {x,y,z} の全形式に対応)
                 const positions = [];
                 poses.forEach(pose => {
                     const pos = pose.position || pose;
+                    const x = Array.isArray(pos) ? pos[0] : pos.x;
+                    const y = Array.isArray(pos) ? pos[1] : pos.y;
+                    const z = Array.isArray(pos) ? pos[2] : pos.z;
                     positions.push(
-                        pos.x - sceneCenterOffset.x,
-                        pos.y - sceneCenterOffset.y,
-                        pos.z - sceneCenterOffset.z
+                        x - sceneCenterOffset.x,
+                        y - sceneCenterOffset.y,
+                        z - sceneCenterOffset.z
                     );
                 });
                 
@@ -1260,29 +1319,48 @@
                 const startGeom = new THREE.SphereGeometry(0.02, 16, 16);
                 const startMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // 緑=開始
                 const startSphere = new THREE.Mesh(startGeom, startMat);
-                const firstPos = poses[0].position || poses[0];
-                startSphere.position.set(
-                    firstPos.x - sceneCenterOffset.x,
-                    firstPos.y - sceneCenterOffset.y,
-                    firstPos.z - sceneCenterOffset.z
+                const firstPose = poses[0];
+                const firstPos = firstPose.position || firstPose;
+                const firstPosVec = new THREE.Vector3(
+                    (Array.isArray(firstPos) ? firstPos[0] : firstPos.x) - sceneCenterOffset.x,
+                    (Array.isArray(firstPos) ? firstPos[1] : firstPos.y) - sceneCenterOffset.y,
+                    (Array.isArray(firstPos) ? firstPos[2] : firstPos.z) - sceneCenterOffset.z
                 );
+                startSphere.position.copy(firstPosVec);
                 startSphere.visible = false;
                 scene.add(startSphere);
                 trajectorySpheres.push(startSphere);
+                
+                // 開始点の向き矢印
+                if (firstPose.rotation) {
+                    const startArrow = createOrientationArrow(firstPosVec, firstPose.rotation, 0x00ff00, 0.15);
+                    startArrow.visible = false;
+                    scene.add(startArrow);
+                    trajectoryArrows.push(startArrow);
+                }
                 
                 const endGeom = new THREE.SphereGeometry(0.02, 16, 16);
                 const endMat = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // 赤=終了
                 const endSphere = new THREE.Mesh(endGeom, endMat);
                 const lastPose = poses[poses.length - 1];
                 const lastPos = lastPose.position || lastPose;
-                endSphere.position.set(
-                    lastPos.x - sceneCenterOffset.x,
-                    lastPos.y - sceneCenterOffset.y,
-                    lastPos.z - sceneCenterOffset.z
+                const lastPosVec = new THREE.Vector3(
+                    (Array.isArray(lastPos) ? lastPos[0] : lastPos.x) - sceneCenterOffset.x,
+                    (Array.isArray(lastPos) ? lastPos[1] : lastPos.y) - sceneCenterOffset.y,
+                    (Array.isArray(lastPos) ? lastPos[2] : lastPos.z) - sceneCenterOffset.z
                 );
+                endSphere.position.copy(lastPosVec);
                 endSphere.visible = false;
                 scene.add(endSphere);
                 trajectorySpheres.push(endSphere);
+                
+                // 終了点の向き矢印
+                if (lastPose.rotation) {
+                    const endArrow = createOrientationArrow(lastPosVec, lastPose.rotation, 0xff0000, 0.15);
+                    endArrow.visible = false;
+                    scene.add(endArrow);
+                    trajectoryArrows.push(endArrow);
+                }
                 
                 document.getElementById('trajectory-count').textContent = poses.length.toString();
                 document.getElementById('btn-trajectory').disabled = false;
@@ -1312,14 +1390,17 @@
                 // メッシュ読み込み時に保存した中心オフセットを使用
                 console.log(`Applying COLMAP trajectory offset: (${sceneCenterOffset.x.toFixed(3)}, ${sceneCenterOffset.y.toFixed(3)}, ${sceneCenterOffset.z.toFixed(3)})`);
                 
-                // 軌跡ラインを作成
+                // 軌跡ラインを作成（配列形式とオブジェクト形式の両方に対応）
                 const positions = [];
                 poses.forEach(pose => {
                     const pos = pose.position || pose;
+                    const x = Array.isArray(pos) ? pos[0] : pos.x;
+                    const y = Array.isArray(pos) ? pos[1] : pos.y;
+                    const z = Array.isArray(pos) ? pos[2] : pos.z;
                     positions.push(
-                        pos.x - sceneCenterOffset.x,
-                        pos.y - sceneCenterOffset.y,
-                        pos.z - sceneCenterOffset.z
+                        x - sceneCenterOffset.x,
+                        y - sceneCenterOffset.y,
+                        z - sceneCenterOffset.z
                     );
                 });
                 
@@ -1340,29 +1421,48 @@
                 const startGeom = new THREE.SphereGeometry(0.025, 16, 16);
                 const startMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa }); // ターコイズ=開始
                 const startSphere = new THREE.Mesh(startGeom, startMat);
-                const firstPos = poses[0].position || poses[0];
-                startSphere.position.set(
-                    firstPos.x - sceneCenterOffset.x,
-                    firstPos.y - sceneCenterOffset.y,
-                    firstPos.z - sceneCenterOffset.z
+                const firstPose = poses[0];
+                const firstPos = firstPose.position || firstPose;
+                const firstPosVec = new THREE.Vector3(
+                    (Array.isArray(firstPos) ? firstPos[0] : firstPos.x) - sceneCenterOffset.x,
+                    (Array.isArray(firstPos) ? firstPos[1] : firstPos.y) - sceneCenterOffset.y,
+                    (Array.isArray(firstPos) ? firstPos[2] : firstPos.z) - sceneCenterOffset.z
                 );
+                startSphere.position.copy(firstPosVec);
                 startSphere.visible = false;
                 scene.add(startSphere);
                 trajectoryColmapSpheres.push(startSphere);
+                
+                // 開始点の向き矢印（COLMAP）
+                if (firstPose.rotation) {
+                    const startArrow = createOrientationArrow(firstPosVec, firstPose.rotation, 0x00ffaa, 0.15);
+                    startArrow.visible = false;
+                    scene.add(startArrow);
+                    trajectoryColmapArrows.push(startArrow);
+                }
                 
                 const endGeom = new THREE.SphereGeometry(0.025, 16, 16);
                 const endMat = new THREE.MeshBasicMaterial({ color: 0xff00ff }); // マゼンタ=終了
                 const endSphere = new THREE.Mesh(endGeom, endMat);
                 const lastPose = poses[poses.length - 1];
                 const lastPos = lastPose.position || lastPose;
-                endSphere.position.set(
-                    lastPos.x - sceneCenterOffset.x,
-                    lastPos.y - sceneCenterOffset.y,
-                    lastPos.z - sceneCenterOffset.z
+                const lastPosVec = new THREE.Vector3(
+                    (Array.isArray(lastPos) ? lastPos[0] : lastPos.x) - sceneCenterOffset.x,
+                    (Array.isArray(lastPos) ? lastPos[1] : lastPos.y) - sceneCenterOffset.y,
+                    (Array.isArray(lastPos) ? lastPos[2] : lastPos.z) - sceneCenterOffset.z
                 );
+                endSphere.position.copy(lastPosVec);
                 endSphere.visible = false;
                 scene.add(endSphere);
                 trajectoryColmapSpheres.push(endSphere);
+                
+                // 終了点の向き矢印（COLMAP）
+                if (lastPose.rotation) {
+                    const endArrow = createOrientationArrow(lastPosVec, lastPose.rotation, 0xff00ff, 0.15);
+                    endArrow.visible = false;
+                    scene.add(endArrow);
+                    trajectoryColmapArrows.push(endArrow);
+                }
                 
                 document.getElementById('btn-trajectory-colmap').disabled = false;
                 
@@ -1392,8 +1492,10 @@
             rfidMarkers.forEach(m => m.visible = false);
             if (trajectoryLine) trajectoryLine.visible = false;
             trajectorySpheres.forEach(s => s.visible = false);
+            trajectoryArrows.forEach(a => a.visible = false);
             if (trajectoryColmapLine) trajectoryColmapLine.visible = false;
             trajectoryColmapSpheres.forEach(s => s.visible = false);
+            trajectoryColmapArrows.forEach(a => a.visible = false);
             
             // モードに応じて表示
             if (mode === 'pointcloud') {
@@ -1408,15 +1510,18 @@
                 // ARCore軌跡（黄色）
                 if (trajectoryLine) trajectoryLine.visible = true;
                 trajectorySpheres.forEach(s => s.visible = true);
+                trajectoryArrows.forEach(a => a.visible = true);  // 向き矢印
                 if (mesh) mesh.visible = true;
                 rfidMarkers.forEach(m => m.visible = true);
             } else if (mode === 'trajectory-colmap') {
                 // COLMAP軌跡（シアン）
                 if (trajectoryColmapLine) trajectoryColmapLine.visible = true;
                 trajectoryColmapSpheres.forEach(s => s.visible = true);
+                trajectoryColmapArrows.forEach(a => a.visible = true);  // 向き矢印
                 // ARCore軌跡も一緒に表示して比較
                 if (trajectoryLine) trajectoryLine.visible = true;
                 trajectorySpheres.forEach(s => s.visible = true);
+                trajectoryArrows.forEach(a => a.visible = true);  // 向き矢印
                 if (mesh) mesh.visible = true;
             }
             
