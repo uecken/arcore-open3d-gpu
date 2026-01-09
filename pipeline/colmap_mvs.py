@@ -333,7 +333,10 @@ class COLMAPMVSPipeline:
                 # 重複を除去（0.001m以上移動した場合のみ追加）
                 if prev_pos is None or np.linalg.norm(position - prev_pos) > 0.001:
                     # ARCore回転（クォータニオン）を取得
-                    quat = frame.pose.quaternion  # [qx, qy, qz, qw]
+                    # frame.pose.quaternion は [qw, qx, qy, qz] 形式
+                    quat = frame.pose.quaternion
+                    # [qx, qy, qz, qw] 形式に変換（scipy/Three.js標準）
+                    quat_xyzw = [float(quat[1]), float(quat[2]), float(quat[3]), float(quat[0])]
                     
                     poses.append({
                         "position": {
@@ -341,7 +344,7 @@ class COLMAPMVSPipeline:
                             "y": float(position[1]),
                             "z": float(position[2])
                         },
-                        "rotation": [float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3])],
+                        "rotation": quat_xyzw,
                         "timestamp": frame.timestamp if hasattr(frame, 'timestamp') else None
                     })
                     prev_pos = position
