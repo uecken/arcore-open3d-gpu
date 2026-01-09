@@ -162,6 +162,7 @@ flowchart TB
 - **Z軸**: デバイスの後ろ方向（カメラが向いている方向の逆）
 - **単位**: メートル
 - **右手座標系**
+- **カメラ視線方向**: -Z方向
 
 ### クォータニオン形式
 - **内部形式**: `[qw, qx, qy, qz]` （CameraPose.quaternion）
@@ -177,6 +178,38 @@ quat_xyzw = [quat[1], quat[2], quat[3], quat[0]]
 ### 自己位置推定方式
 - **VIO (Visual-Inertial Odometry)**: カメラ画像 + IMU
 - **精度**: 位置 ~数cm、回転 ~1-3°
+
+---
+
+## 1.5. Viewer（Three.js）座標系
+
+### 特徴
+- **Y軸**: 上方向
+- **X軸**: 右方向
+- **Z軸**: 手前方向（画面から出てくる方向）
+- **右手座標系**
+- **カメラ視線方向**: -Z方向
+
+### ✅ ARCoreとThree.jsは同一座標系
+
+| 軸 | ARCore | Three.js | 一致 |
+|----|--------|----------|------|
+| X軸 | 右 | 右 | ✅ |
+| Y軸 | 上（重力逆） | 上 | ✅ |
+| Z軸 | 後（カメラ逆） | 手前 | ✅ |
+| カメラ視線 | -Z方向 | -Z方向 | ✅ |
+| 座標系 | 右手系 | 右手系 | ✅ |
+
+**結論: ARCoreの座標をそのままViewerで使用可能**
+
+```javascript
+// Viewerでの軌跡表示（変換不要）
+const x = pose.position.x;  // ARCore X → Three.js X
+const y = pose.position.y;  // ARCore Y → Three.js Y
+const z = pose.position.z;  // ARCore Z → Three.js Z
+```
+
+唯一の処理は、メッシュの中心を原点に合わせる`sceneCenterOffset`の適用のみ。
 
 ---
 
@@ -346,6 +379,9 @@ ARCore VIO → カメラ位置 (ARCore座標) → RFID検出位置 (ARCore座標
 
 ## 7. Viewer表示
 
+**注意: ARCoreとThree.js（Viewer）は同一座標系です。**
+軸の反転や入れ替えは不要で、中心オフセットの適用のみ行います。
+
 ### 座標オフセット処理
 
 ```javascript
@@ -418,10 +454,13 @@ Procrustes分析による自動変換は**カメラ位置**を合わせますが
 Procrustes分析は「カメラ位置の形状」を最適に合わせる回転を計算しますが、
 これは必ずしもメッシュが「水平に見える」回転とは限りません。
 
-座標系の違い：
-- **ARCore**: 重力センサーを使用、Y軸が上方向
-- **COLMAP**: 画像のみから構築、軸方向は任意
-- **Viewer (Three.js)**: Y軸が上方向
+座標系の関係：
+- **ARCore = Viewer (Three.js)**: 同一座標系（Y軸が上、右手系）
+- **COLMAP**: 画像のみから構築、軸方向は**任意**
+
+**問題の原因はCOLMAP座標系の任意性にあります。**
+ARCoreとViewerは同じ座標系なので、ARCore軌跡はそのまま正しく表示されます。
+しかし、COLMAPメッシュはProcrustes変換後も傾きが残る場合があります。
 
 ### セッション固有の傾き
 
