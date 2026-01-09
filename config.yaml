@@ -205,3 +205,76 @@ viewer:
 logging:
   level: "INFO"
   file: "/var/log/arcore-open3d/server.log"
+
+# 方法C: スケール補正付きCOLMAP深度統合
+colmap_depth:
+  # GPU TSDF統合設定
+  voxel_size: 0.02      # 2cm解像度 (メモリ節約)
+  block_resolution: 16
+  block_count: 100000
+  
+  # 深度マップ設定
+  depth_scale: 1.0      # スケール補正後なので1.0
+  depth_max: 5.0        # 最大深度（メートル）
+  depth_min: 0.1        # 最小深度（メートル）
+  
+  # メッシュ生成設定
+  extract_mesh: true
+  mesh_weight_threshold: 3.0  # メッシュ抽出の重み閾値
+  
+  # 未登録フレームの処理
+  skip_unregistered: true  # COLMAPで未登録のフレームはスキップ
+
+# 座標系位置合わせ設定
+alignment:
+  # ARCore回転を直接使用（推奨）
+  # COLMAPの回転推定は55°以上の誤差があるため、ARCoreの高精度な回転を使用
+  use_arcore_rotation: true
+  
+  # セグメント別局所補正
+  # COLMAPとARCoreの軌跡のずれを時間セグメントごとに補正
+  segment_correction:
+    enable: true
+    segment_duration_sec: 2.0  # セグメント長（秒）
+                                # 短いほど精度向上、長いほどメッシュ安定
+                                # 推奨: 1-5秒
+    min_points_per_segment: 3  # セグメント内の最小点数
+    
+  # メッシュへの補正適用
+  mesh_correction:
+    enable: true
+    interpolation_neighbors: 3  # 最近傍カメラ数（重み付け平均）
+
+gpu:
+  enabled: true
+  device_id: 0
+  use_cuda: true
+  cuda_available: true
+  allow_fallback_to_cpu: false
+  memory_fraction: 0.9
+  allow_growth: true
+
+output:
+  point_cloud:
+    format: "ply"
+    with_normals: true
+    with_colors: true
+  
+  mesh:
+    format: "ply"
+    compute_normals: true
+    simplify: false
+    target_triangles: 100000
+    simplify_for_viewer: true
+    max_triangles_for_viewer: 500000
+
+viewer:
+  default_view: "mesh"
+  auto_load:
+    point_cloud: false
+    mesh: true
+    rfid: true
+
+logging:
+  level: "INFO"
+  file: "/var/log/arcore-open3d/server.log"

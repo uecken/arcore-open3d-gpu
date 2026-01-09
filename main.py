@@ -470,6 +470,76 @@ async def get_mesh_aligned(job_id: str):
         raise HTTPException(404, "Aligned mesh not found")
     return FileResponse(path, media_type="application/octet-stream")
 
+@app.get("/scenes/{job_id}/mesh_rot_{rotation}.ply")
+async def get_mesh_rotated(job_id: str, rotation: str):
+    """回転補正テスト用メッシュ"""
+    # rotation: x30, x-30, z30, z-30
+    path = RESULTS_DIR / job_id / f"mesh_rot_{rotation}.ply"
+    if not path.exists():
+        raise HTTPException(404, f"Rotated mesh not found: {rotation}")
+    return FileResponse(path, media_type="application/octet-stream")
+
+@app.post("/scenes/{job_id}/apply_rotation")
+async def apply_rotation(job_id: str, request: dict):
+    """メッシュに回転を適用"""
+    import numpy as np
+    import open3d as o3d
+    from scipy.spatial.transform import Rotation
+    
+    rot_x = request.get('rot_x', 0)
+    rot_y = request.get('rot_y', 0)
+    rot_z = request.get('rot_z', 0)
+    
+    result_dir = RESULTS_DIR / job_id
+    original_path = result_dir / "mesh_original.ply"
+    mesh_path = result_dir / "mesh.ply"
+    
+    if not original_path.exists():
+        # オリジナルがなければ現在のメッシュをバックアップ
+        if mesh_path.exists():
+            import shutil
+            shutil.copy(mesh_path, original_path)
+        else:
+            raise HTTPException(404, "Mesh not found")
+    
+    # オリジナルから読み込み
+    mesh = o3d.io.read_triangle_mesh(str(original_path))
+    
+    # XYZ順で回転を適用
+    r = Rotation.from_euler('xyz', [np.radians(rot_x), np.radians(rot_y), np.radians(rot_z)])
+    
+    vertices = np.asarray(mesh.vertices)
+    center = vertices.mean(axis=0)
+    vertices_centered = vertices - center
+    vertices_rotated = (r.as_matrix() @ vertices_centered.T).T + center
+    mesh.vertices = o3d.utility.Vector3dVector(vertices_rotated)
+    
+    if mesh.has_vertex_normals():
+        normals = np.asarray(mesh.vertex_normals)
+        normals_rotated = (r.as_matrix() @ normals.T).T
+        mesh.vertex_normals = o3d.utility.Vector3dVector(normals_rotated)
+    
+    o3d.io.write_triangle_mesh(str(mesh_path), mesh)
+    
+    print(f"[{job_id}] Rotation applied: X={rot_x}°, Y={rot_y}°, Z={rot_z}°")
+    return {"status": "ok", "rotation": {"x": rot_x, "y": rot_y, "z": rot_z}}
+
+@app.post("/scenes/{job_id}/reset_rotation")
+async def reset_rotation(job_id: str):
+    """メッシュをオリジナルに戻す"""
+    import shutil
+    
+    result_dir = RESULTS_DIR / job_id
+    original_path = result_dir / "mesh_original.ply"
+    mesh_path = result_dir / "mesh.ply"
+    
+    if original_path.exists():
+        shutil.copy(original_path, mesh_path)
+        print(f"[{job_id}] Rotation reset to original")
+        return {"status": "ok", "message": "Reset to original"}
+    else:
+        raise HTTPException(404, "Original mesh not found")
+
 @app.get("/scenes/{job_id}/trajectory_colmap_corrected.json")
 async def get_trajectory_colmap_corrected(job_id: str):
     """局所補正済みCOLMAP軌跡"""
