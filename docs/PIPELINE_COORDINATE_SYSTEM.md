@@ -417,9 +417,7 @@ trajectory.json   : ARCore座標系（元々）
 rfid_positions.json: ARCore座標系（元々）
 ```
 
-### Viewerでの表示オフセット
-
-Viewerでは、すべてのデータに同じ `sceneCenterOffset` を適用：
+### Viewerでの表示オフセットViewerでは、すべてのデータに同じ `sceneCenterOffset` を適用：
 
 ```javascript
 // viewer.html での処理
